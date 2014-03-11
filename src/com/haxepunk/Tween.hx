@@ -77,10 +77,12 @@ class Tween extends EventDispatcher
 		{
 			active = false;
 			dispatchEvent(new TweenEvent(TweenEvent.FINISH));
-			return;
 		}
-		active = true;
-		dispatchEvent(new TweenEvent(TweenEvent.START));
+		else
+		{
+			active = true;
+			dispatchEvent(new TweenEvent(TweenEvent.START));
+		}
 	}
 
 	/** @private Called when the Tween completes. */
@@ -117,12 +119,12 @@ class Tween extends EventDispatcher
 		}
 	}
 
-	public var percent(getPercent, setPercent):Float;
-	private function getPercent():Float { return _time / _target; }
-	private function setPercent(value:Float):Float { _time = _target * value; return _time; }
+	public var percent(get, set):Float;
+	private function get_percent():Float { return _time / _target; }
+	private function set_percent(value:Float):Float { _time = _target * value; return _time; }
 
-	public var scale(getScale, null):Float;
-	private function getScale():Float { return _t; }
+	public var scale(get, null):Float;
+	private function get_scale():Float { return _t; }
 
 	private var _type:TweenType;
 	private var _ease:EaseFunction;

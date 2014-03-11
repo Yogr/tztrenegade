@@ -18,11 +18,27 @@ class Canvas extends Graphic
 	/**
 	 * Optional blend mode to use (see flash.display.BlendMode for blending modes).
 	 */
-	#if (flash || js)
 	public var blend:BlendMode;
-	#else
-	public var blend:String;
-	#end
+
+	/**
+	 * Rotation of the canvas, in degrees.
+	 */
+	public var angle:Float;
+
+	/**
+	 * Scale of the canvas, effects both x and y scale.
+	 */
+	public var scale:Float;
+
+	/**
+	 * X scale of the canvas.
+	 */
+	public var scaleX:Float;
+
+	/**
+	 * Y scale of the canvas.
+	 */
+	public var scaleY:Float;
 
 	/**
 	 * Constructor.
@@ -32,70 +48,138 @@ class Canvas extends Graphic
 	public function new(width:Int, height:Int)
 	{
 		super();
-		_buffers = new Array<BitmapData>();
-		_maxWidth = _maxHeight = 4000;
 		_color = 0xFFFFFF;
+		_red = _green = _blue = 1;
 		_alpha = 1;
-		_colorTransform = new ColorTransform();
+		_graphics = HXP.sprite.graphics;
 		_matrix = new Matrix();
 		_rect = new Rectangle();
-		_graphics = HXP.sprite.graphics;
+		_colorTransform = new ColorTransform();
+		_buffers = new Array<BitmapData>();
+		_midBuffers = new Array<BitmapData>();
+		angle = 0;
+		scale = scaleX = scaleY = 1;
 
 		_width = width;
 		_height = height;
-		_refWidth = Math.ceil(width / _maxWidth);
-		_refHeight = Math.ceil(height / _maxHeight);
-		_ref = HXP.createBitmap(_refWidth, _refHeight);
-		var x:Int = 0, y:Int = 0, w:Int, h:Int, i:Int = 0,
-			ww:Int = _width % _maxWidth,
-			hh:Int = _height % _maxHeight;
-		if (ww == 0) ww = _maxWidth;
-		if (hh == 0) hh = _maxHeight;
-		while (y < _refHeight)
+
+		if (HXP.renderMode == RenderMode.BUFFER)
 		{
-			h = y < _refHeight - 1 ? _maxHeight : hh;
-			while (x < _refWidth)
+			_refWidth = Math.ceil(width / _maxWidth);
+			_refHeight = Math.ceil(height / _maxHeight);
+			_ref = HXP.createBitmap(_refWidth, _refHeight);
+			var x:Int = 0, y:Int = 0, w:Int, h:Int, i:Int = 0,
+				ww:Int = _width % _maxWidth,
+				hh:Int = _height % _maxHeight;
+			if (ww == 0) ww = _maxWidth;
+			if (hh == 0) hh = _maxHeight;
+			while (y < _refHeight)
 			{
-				w = x < _refWidth - 1 ? _maxWidth : ww;
-				_ref.setPixel(x, y, i);
-				_buffers[i] = HXP.createBitmap(w, h, true);
-				i ++; x ++;
+				h = y < _refHeight - 1 ? _maxHeight : hh;
+				while (x < _refWidth)
+				{
+					w = x < _refWidth - 1 ? _maxWidth : ww;
+					_ref.setPixel(x, y, i);
+					_buffers[i] = HXP.createBitmap(w, h, true);
+					i ++; x ++;
+				}
+				x = 0; y ++;
 			}
-			x = 0; y ++;
 		}
 	}
 
 	/** @private Renders the canvas. */
 	override public function render(target:BitmapData, point:Point, camera:Point)
 	{
+		var sx = scale * scaleX,
+			sy = scale * scaleY;
+
 		// determine drawing location
 		_point.x = point.x + x - camera.x * scrollX;
 		_point.y = point.y + y - camera.y * scrollY;
 
+		_rect.x = _rect.y = 0;
+		_rect.width = _maxWidth*sx;
+		_rect.height = _maxHeight*sy;
+
 		// render the buffers
 		var xx:Int = 0, yy:Int = 0, buffer:BitmapData, px:Float = _point.x;
-		target.lock();
+		#if !bitfive target.lock(); #end
 		while (yy < _refHeight)
 		{
 			while (xx < _refWidth)
 			{
 				buffer = _buffers[_ref.getPixel(xx, yy)];
-				if (_tint != null || blend != null)
+
+				if (angle == 0 && blend == null)
 				{
-					_matrix.tx = _point.x;
-					_matrix.ty = _point.y;
+					if (sx == 1 && sy == 1 && _tint == null)
+					{
+						// copy the pixels directly onto the buffer
+						_rect.width = buffer.width;
+						_rect.height = buffer.height;
+						target.copyPixels(buffer, _rect, _point, null, null, true);
+					}
+					else
+					{
+						// rescale first onto an intermediate buffer, then copy
+						var i = Std.int(_ref.getPixel(xx, yy));
+						var w = Std.int(buffer.width * sx);
+						var h = Std.int(buffer.height * sy);
+						var wrongSize = i >= _midBuffers.length ||
+							_midBuffers[i].width != w ||
+							_midBuffers[i].height != h;
+						if (_redrawBuffers || wrongSize)
+						{
+							if (wrongSize)
+							{
+								if (i < _midBuffers.length)
+								{
+									_midBuffers[i].dispose();
+								}
+								_midBuffers[i] = HXP.createBitmap(w, h, true);
+							}
+							else
+							{
+								_midBuffers[i].fillRect(_midBuffers[i].rect, 0);
+							}
+							_matrix.b = _matrix.c = 0;
+							_matrix.a = sx;
+							_matrix.d = sy;
+							_matrix.tx = _matrix.ty = 0;
+							if (angle != 0) _matrix.rotate(angle * HXP.RAD);
+
+							_midBuffers[i].draw(buffer, _matrix, _tint, blend);
+						}
+
+						target.copyPixels(_midBuffers[i], _rect, _point, null, null, true);
+					}
+				}
+				else
+				{
+					// render with transformation
+					_matrix.b = _matrix.c = 0;
+					_matrix.a = sx;
+					_matrix.d = sy;
+					_matrix.tx = _matrix.ty = 0;
+					if (angle != 0) _matrix.rotate(angle * HXP.RAD);
+					_matrix.tx += _point.x;
+					_matrix.ty += _point.y;
+
 					target.draw(buffer, _matrix, _tint, blend);
 				}
-				else target.copyPixels(buffer, buffer.rect, _point, null, null, true);
-				_point.x += _maxWidth;
+
+				_point.x += _maxWidth * sx;
 				xx ++;
 			}
 			_point.x = px;
-			_point.y += _maxHeight;
+			_point.y += _maxHeight * sy;
 			xx = 0;
 			yy ++;
 		}
-		target.unlock();
+		#if !bitfive target.unlock(); #end
+
+		_redrawBuffers = false;
 	}
 
 	/**
@@ -108,6 +192,7 @@ class Canvas extends Graphic
 	public function draw(x:Int, y:Int, source:BitmapData, rect:Rectangle = null)
 	{
 		var xx:Int = 0, yy:Int = 0;
+		var i = 0;
 		for (buffer in _buffers)
 		{
 			_point.x = x - xx;
@@ -120,6 +205,7 @@ class Canvas extends Graphic
 				yy += _maxHeight;
 			}
 		}
+		_redrawBuffers = true;
 	}
 
 	/**
@@ -140,7 +226,7 @@ class Canvas extends Graphic
 		{
 			_rect.x = rect.x - xx;
 			_rect.y = rect.y - yy;
-			buffer.fillRect(_rect, HXP.convertColor(color));
+			buffer.fillRect(_rect, color);
 			xx += _maxWidth;
 			if (xx >= _width)
 			{
@@ -168,7 +254,7 @@ class Canvas extends Graphic
 			{
 				_rect.x = rect.x - xx;
 				_rect.y = rect.y - yy;
-				buffer.fillRect(_rect, HXP.convertColor(0xFF000000 | color));
+				buffer.fillRect(_rect, 0xFF000000 | color);
 				xx += _maxWidth;
 				if (xx >= _width)
 				{
@@ -244,32 +330,37 @@ class Canvas extends Graphic
 	/**
 	 * The tinted color of the Canvas. Use 0xFFFFFF to draw the it normally.
 	 */
-	public var color(getColor, setColor):Int;
-	private function getColor():Int { return _color; }
-	private function setColor(value:Int):Int
+	public var color(get, set):Int;
+	private function get_color():Int { return _color; }
+	private function set_color(value:Int):Int
 	{
 		value %= 0xFFFFFF;
 		if (_color == value) return _color;
 		_color = value;
+		_red = HXP.getRed(color) / 255;
+		_green = HXP.getGreen(color) / 255;
+		_blue = HXP.getBlue(color) / 255;
+
 		if (_alpha == 1 && _color == 0xFFFFFF)
 		{
 			_tint = null;
 			return _color;
 		}
 		_tint = _colorTransform;
-		_tint.redMultiplier = (_color >> 16 & 0xFF) / 255;
-		_tint.greenMultiplier = (_color >> 8 & 0xFF) / 255;
-		_tint.blueMultiplier = (_color & 0xFF) / 255;
+		_tint.redMultiplier = _red;
+		_tint.greenMultiplier = _green;
+		_tint.blueMultiplier = _blue;
 		_tint.alphaMultiplier = _alpha;
+		_redrawBuffers = true;
 		return _color;
 	}
 
 	/**
 	 * Change the opacity of the Canvas, a value from 0 to 1.
 	 */
-	public var alpha(getAlpha, setAlpha):Float;
-	private function getAlpha():Float { return _alpha; }
-	private function setAlpha(value:Float):Float
+	public var alpha(get, set):Float;
+	private function get_alpha():Float { return _alpha; }
+	private function set_alpha(value:Float):Float
 	{
 		if (value < 0) value = 0;
 		if (value > 1) value = 1;
@@ -281,10 +372,11 @@ class Canvas extends Graphic
 			return _alpha;
 		}
 		_tint = _colorTransform;
-		_tint.redMultiplier = (_color >> 16 & 0xFF) / 255;
-		_tint.greenMultiplier = (_color >> 8 & 0xFF) / 255;
-		_tint.blueMultiplier = (_color & 0xFF) / 255;
+		_tint.redMultiplier = _red;
+		_tint.greenMultiplier = _green;
+		_tint.blueMultiplier = _blue;
 		_tint.alphaMultiplier = _alpha;
+		_redrawBuffers = true;
 		return _alpha;
 	}
 
@@ -301,21 +393,23 @@ class Canvas extends Graphic
 	/**
 	 * Width of the canvas.
 	 */
-	public var width(getWidth, null):Int;
-	private function getWidth():Int { return _width; }
+	public var width(get, null):Int;
+	private function get_width():Int { return _width; }
 
 	/**
 	 * Height of the canvas.
 	 */
-	public var height(getHeight, null):Int;
-	private function getHeight():Int { return _height; }
+	public var height(get, null):Int;
+	private function get_height():Int { return _height; }
 
 	// Buffer information.
 	private var _buffers:Array<BitmapData>;
+	private var _midBuffers:Array<BitmapData>;
+	private var _redrawBuffers:Bool=false;
 	private var _width:Int;
 	private var _height:Int;
-	private var _maxWidth:Int;
-	private var _maxHeight:Int;
+	private var _maxWidth:Int = 4000;
+	private var _maxHeight:Int = 4000;
 
 	// Color tinting information.
 	private var _color:Int;
@@ -323,6 +417,9 @@ class Canvas extends Graphic
 	private var _tint:ColorTransform;
 	private var _colorTransform:ColorTransform;
 	private var _matrix:Matrix;
+	private var _red:Float;
+	private var _green:Float;
+	private var _blue:Float;
 
 	// Canvas reference information.
 	private var _ref:BitmapData;

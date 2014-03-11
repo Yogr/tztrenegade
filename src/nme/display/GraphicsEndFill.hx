@@ -1,28 +1,18 @@
 package nme.display;
-#if code_completion
+#if (cpp || neko)
 
+import nme.Loader;
 
-/**
- * Indicates the end of a graphics fill. Use a GraphicsEndFill object with the
- * <code>Graphics.drawGraphicsData()</code> method.
- *
- * <p> Drawing a GraphicsEndFill object is the equivalent of calling the
- * <code>Graphics.endFill()</code> method. </p>
- */
-extern class GraphicsEndFill implements IGraphicsData/*, implements IGraphicsFill*/ {
+class GraphicsEndFill extends IGraphicsData 
+{
+   public function new() 
+   {
+      super(nme_graphics_end_fill_create());
+   }
 
-	/**
-	 * Creates an object to use with the <code>Graphics.drawGraphicsData()</code>
-	 * method to end the fill, explicitly.
-	 */
-	function new() : Void;
+   private static var nme_graphics_end_fill_create = Loader.load("nme_graphics_end_fill_create", 0);
 }
 
-
-#elseif (cpp || neko)
-typedef GraphicsEndFill = neash.display.GraphicsEndFill;
-#elseif js
-typedef GraphicsEndFill = jeash.display.GraphicsEndFill;
 #else
 typedef GraphicsEndFill = flash.display.GraphicsEndFill;
 #end

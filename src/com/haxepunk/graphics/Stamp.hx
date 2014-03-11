@@ -1,11 +1,14 @@
 package com.haxepunk.graphics;
 
+import com.haxepunk.HXP;
+import com.haxepunk.Graphic;
+import com.haxepunk.graphics.atlas.Atlas;
+import com.haxepunk.graphics.atlas.AtlasRegion;
+
 import flash.display.BitmapData;
 import flash.display.DisplayObject;
 import flash.geom.Point;
 import flash.geom.Rectangle;
-import com.haxepunk.HXP;
-import com.haxepunk.Graphic;
 
 /**
  * A simple non-transformed, non-animated graphic.
@@ -27,42 +30,83 @@ class Stamp extends Graphic
 		this.y = y;
 
 		// set the graphic
-		if (Std.is(source, BitmapData)) _source = source;
-		else _source = HXP.getBitmap(source);
+		if (Std.is(source, AtlasRegion))
+		{
+			setAtlasRegion(source);
+		}
+		else
+		{
+			if (HXP.renderMode == RenderMode.HARDWARE)
+			{
+				setAtlasRegion(Atlas.loadImageAsRegion(source));
+			}
+			else
+			{
+				if (Std.is(source, BitmapData))
+				{
+					setBitmapSource(source);
+				}
+				else
+				{
+					setBitmapSource(HXP.getBitmap(source));
+				}
+			}
+		}
+	}
 
-		if (_source == null) throw "Invalid source image.";
+	private inline function setAtlasRegion(region:AtlasRegion)
+	{
+		blit = false;
+		_region = region;
 
-		_sourceRect = _source.rect;
+		if (_region == null)
+			throw "Invalid source image.";
+
+		_sourceRect = new Rectangle(0, 0, _region.width, _region.height);
+	}
+
+	private inline function setBitmapSource(bitmap:BitmapData)
+	{
+		if (bitmap == null)
+			throw "Invalid source image.";
+
+		blit = true;
+		_sourceRect = bitmap.rect;
+		_source = bitmap;
 	}
 
 	/** @private Renders the Graphic. */
 	override public function render(target:BitmapData, point:Point, camera:Point)
 	{
-		if (_source == null) return;
 		_point.x = point.x + x - camera.x * scrollX;
 		_point.y = point.y + y - camera.y * scrollY;
+
 		target.copyPixels(_source, _sourceRect, _point, null, null, true);
 	}
 
-	/**
-	 * Source BitmapData image.
-	 */
-	public var source(getSource, setSource):BitmapData;
-	private function getSource():BitmapData { return _source; }
-	private function setSource(value:BitmapData):BitmapData
+	override public function renderAtlas(layer:Int, point:Point, camera:Point)
 	{
-		_source = value;
-		if (_source != null) _sourceRect = _source.rect;
-		return _source;
+		_point.x = point.x + x - camera.x * scrollX;
+		_point.y = point.y + y - camera.y * scrollY;
+
+		var sx = HXP.screen.fullScaleX, sy = HXP.screen.fullScaleY;
+		_region.draw(Math.floor(_point.x * sx), Math.floor(_point.y * sy), layer, sx, sy);
 	}
 
-	public var width(getWidth, never):Int;
-	private function getWidth():Int { return _source.width; }
+	/**
+	 * Width of the image.
+	 */
+	public var width(get, never):Int;
+	private function get_width():Int { return Std.int(blit ? _source.width : _region.width); }
 
-	public var height(getHeight, never):Int;
-	private function getHeight():Int { return _source.height; }
+	/**
+	 * Height of the image.
+	 */
+	public var height(get, never):Int;
+	private function get_height():Int { return Std.int(blit ? _source.height : _region.height); }
 
 	// Stamp information.
 	private var _source:BitmapData;
 	private var _sourceRect:Rectangle;
+	private var _region:AtlasRegion;
 }

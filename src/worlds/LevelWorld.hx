@@ -6,7 +6,7 @@ import com.haxepunk.graphics.Image;
 import com.haxepunk.World;
 import com.haxepunk.HXP;
 import nme.geom.Rectangle;
-import com.haxepunk.tmx.TmxMap;
+//import com.haxepunk.tmx.TmxMap;
 
 /**
  * ...

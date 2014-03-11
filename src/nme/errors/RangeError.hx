@@ -1,15 +1,14 @@
 package nme.errors;
-#if code_completion
+#if (cpp || neko)
 
-
-@:native("RangeError") extern class RangeError extends nme.errors.Error {
+class RangeError extends Error 
+{
+   public function new(inMessage:String = "") 
+   {
+      super(inMessage, 0);
+   }
 }
 
-
-#elseif (cpp || neko)
-typedef RangeError = neash.errors.RangeError;
-#elseif js
-typedef RangeError = jeash.errors.RangeError;
 #else
 typedef RangeError = flash.errors.RangeError;
 #end

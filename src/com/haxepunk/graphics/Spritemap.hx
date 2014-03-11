@@ -1,11 +1,12 @@
 package com.haxepunk.graphics;
 
+import com.haxepunk.HXP;
+import com.haxepunk.graphics.atlas.TileAtlas;
+
 import flash.display.BitmapData;
-import flash.display.BlendMode;
 import flash.display.SpreadMethod;
 import flash.geom.Point;
 import flash.geom.Rectangle;
-import com.haxepunk.HXP;
 
 typedef CallbackFunction = Void -> Void;
 
@@ -35,22 +36,47 @@ class Spritemap extends Image
 	 * @param	source			Source image.
 	 * @param	frameWidth		Frame width.
 	 * @param	frameHeight		Frame height.
-	 * @param	callback		Optional callback function for animation end.
+	 * @param	cbFunc			Optional callback function for animation end.
+	 * @param	name			Optional name, necessary to identify the bitmapData if you are using flipped.
 	 */
 	public function new(source:Dynamic, frameWidth:Int = 0, frameHeight:Int = 0, cbFunc:CallbackFunction = null, name:String = "")
 	{
 		complete = true;
 		rate = 1;
-		_anims = new Hash<Animation>();
+		_anims = new Map<String,Animation>();
 		_timer = _frame = 0;
 
 		_rect = new Rectangle(0, 0, frameWidth, frameHeight);
-		super(source, _rect, name);
-		if (frameWidth == 0) _rect.width = _source.width;
-		if (frameHeight == 0) _rect.height = _source.height;
+		if (Std.is(source, TileAtlas))
+		{
+			blit = false;
+			_atlas = cast(source, TileAtlas);
+			_region = _atlas.getRegion(_frame);
+		}
+		else if (HXP.renderMode == RenderMode.HARDWARE)
+		{
+			blit = false;
+			_atlas = new TileAtlas(source, frameWidth, frameHeight);
+			_region = _atlas.getRegion(_frame);
+		}
 
-		_width = _source.width;
-		_height = _source.height;
+		super(source, _rect, name);
+
+		if (blit)
+		{
+			_width = _source.width;
+			_height = _source.height;
+		}
+		else
+		{
+			_width = Std.int(_atlas.width);
+			_height = Std.int(_atlas.height);
+		}
+		if (frameWidth == 0) _rect.width = _width;
+		if (frameHeight == 0) _rect.height = _height;
+
+		if (_width % _rect.width != 0 || _height % _rect.height != 0)
+			throw "Source image width and height should be multiples of the frame width and height.";
 
 		_columns = Math.ceil(_width / _rect.width);
 		_rows = Math.ceil(_height / _rect.height);
@@ -59,7 +85,6 @@ class Spritemap extends Image
 
 		updateBuffer();
 		active = true;
-
 	}
 
 	/**
@@ -67,18 +92,24 @@ class Spritemap extends Image
 	 */
 	override public function updateBuffer(clearBefore:Bool = false)
 	{
-#if neko
-		if (_width == null) return;
-#end
-		// get position of the current frame
-		_rect.x = _rect.width * _frame;
-		_rect.y = Std.int(_rect.x / _width) * _rect.height;
-		_rect.x = _rect.x % _width;
+		if (blit)
+		{
+			// get position of the current frame
+			if (_width > 0 && _height > 0)
+			{
+				_rect.x = _rect.width * _frame;
+				_rect.y = Std.int(_rect.x / _width) * _rect.height;
+				_rect.x = _rect.x % _width;
+				if (_flipped) _rect.x = (_width - _rect.width) - _rect.x;
+			}
 
-		if (flipped) _rect.x = (_width - _rect.width) - _rect.x;
-
-		// update the buffer
-		super.updateBuffer(clearBefore);
+			// update the buffer
+			super.updateBuffer(clearBefore);
+		}
+		else
+		{
+			_region = _atlas.getRegion(_frame);
+		}
 	}
 
 	/** @private Updates the animation. */
@@ -86,7 +117,7 @@ class Spritemap extends Image
 	{
 		if (_anim != null && !complete)
 		{
-			_timer += (HXP.fixed ? _anim.frameRate : _anim.frameRate * HXP.elapsed) * rate;
+			_timer += (HXP.fixed ? _anim.frameRate / HXP.assignedFrameRate : _anim.frameRate * HXP.elapsed) * rate;
 			if (_timer >= 1)
 			{
 				while (_timer >= 1)
@@ -119,19 +150,24 @@ class Spritemap extends Image
 	 * Add an Animation.
 	 * @param	name		Name of the animation.
 	 * @param	frames		Array of frame indices to animate through.
-	 * @param	frameRate	Animation speed.
-	 * @param	loop		If the animation should loop.
+	 * @param	frameRate	Animation speed (in frames per second, 0 defaults to assigned frame rate)
+	 * @param	loop		If the animation should loop
 	 * @return	A new Anim object for the animation.
 	 */
 	public function add(name:String, frames:Array<Int>, frameRate:Float = 0, loop:Bool = true):Animation
 	{
-		if (_anims.get(name) != null) throw "Cannot have multiple animations with the same name";
+		if (_anims.get(name) != null)
+			throw "Cannot have multiple animations with the same name";
+
+		if(frameRate == 0)
+			frameRate = HXP.assignedFrameRate;
+
 		for (i in 0...frames.length)
 		{
 			frames[i] %= _frameCount;
 			if (frames[i] < 0) frames[i] += _frameCount;
 		}
-		var anim:Animation = new Animation(name, frames, frameRate, loop);
+		var anim = new Animation(name, frames, frameRate, loop);
 		_anims.set(name, anim);
 		anim.parent = this;
 		return anim;
@@ -146,18 +182,19 @@ class Spritemap extends Image
 	public function play(name:String = "", reset:Bool = false):Animation
 	{
 		if (!reset && _anim != null && _anim.name == name) return _anim;
-		_anim = _anims.get(name);
-		if (_anim == null)
+		if (_anims.exists(name))
 		{
+			_anim = _anims.get(name);
+			_timer = _index = 0;
+			_frame = _anim.frames[0];
+			complete = false;
+		}
+		else
+		{
+			_anim = null;
 			_frame = _index = 0;
 			complete = true;
-			updateBuffer();
-			return null;
 		}
-		_index = 0;
-		_timer = 0;
-		_frame = _anim.frames[0];
-		complete = false;
 		updateBuffer();
 		return _anim;
 	}
@@ -168,7 +205,7 @@ class Spritemap extends Image
 	 * @param	row			Frame row.
 	 * @return	Frame index.
 	 */
-	public function getFrame(column:Int = 0, row:Int = 0):Int
+	public inline function getFrame(column:Int = 0, row:Int = 0):Int
 	{
 		return (row % _rows) * _columns + (column % _columns);
 	}
@@ -182,7 +219,7 @@ class Spritemap extends Image
 	public function setFrame(column:Int = 0, row:Int = 0)
 	{
 		_anim = null;
-		var frame:Int = (row % _rows) * _columns + (column % _columns);
+		var frame:Int = getFrame(column, row);
 		if (_frame == frame) return;
 		_frame = frame;
 		updateBuffer();
@@ -213,9 +250,9 @@ class Spritemap extends Image
 	 * Sets the current frame index. When you set this, any
 	 * animations playing will be stopped to force the frame.
 	 */
-	public var frame(getFrameIndex, setFrameIndex):Int;
-	private function getFrameIndex():Int { return _frame; }
-	private function setFrameIndex(value:Int):Int
+	public var frame(get, set):Int;
+	private function get_frame():Int { return _frame; }
+	private function set_frame(value:Int):Int
 	{
 		_anim = null;
 		value %= _frameCount;
@@ -229,9 +266,9 @@ class Spritemap extends Image
 	/**
 	 * Current index of the playing animation.
 	 */
-	public var index(getIndex, setIndex):Int;
-	private function getIndex():Int { return _anim != null ? _index : 0; }
-	private function setIndex(value:Int):Int
+	public var index(get, set):Int;
+	private function get_index():Int { return _anim != null ? _index : 0; }
+	private function set_index(value:Int):Int
 	{
 		if (_anim == null) return 0;
 		value %= _anim.frameCount;
@@ -245,26 +282,26 @@ class Spritemap extends Image
 	/**
 	 * The amount of frames in the Spritemap.
 	 */
-	public var frameCount(getFrameCount, null):Int;
-	private function getFrameCount():Int { return _frameCount; }
+	public var frameCount(get, null):Int;
+	private function get_frameCount():Int { return _frameCount; }
 
 	/**
 	 * Columns in the Spritemap.
 	 */
-	public var columns(getColumns, null):Int;
-	private function getColumns():Int { return _columns; }
+	public var columns(get, null):Int;
+	private function get_columns():Int { return _columns; }
 
 	/**
 	 * Rows in the Spritemap.
 	 */
-	public var rows(getRows, null):Int;
-	private function getRows():Int { return _rows; }
+	public var rows(get, null):Int;
+	private function get_rows():Int { return _rows; }
 
 	/**
 	 * The currently playing animation.
 	 */
-	public var currentAnim(getCurrentAnim, null):String;
-	private function getCurrentAnim():String { return (_anim != null) ? _anim.name : ""; }
+	public var currentAnim(get, null):String;
+	private function get_currentAnim():String { return (_anim != null) ? _anim.name : ""; }
 
 	// Spritemap information.
 	private var _rect:Rectangle;
@@ -273,13 +310,10 @@ class Spritemap extends Image
 	private var _columns:Int;
 	private var _rows:Int;
 	private var _frameCount:Int;
-	private var _anims:Hash<Animation>;
+	private var _anims:Map<String,Animation>;
 	private var _anim:Animation;
 	private var _index:Int;
 	private var _frame:Int;
 	private var _timer:Float;
-
-	#if cpp
-	private var _baseID:Int;
-	#end
+	private var _atlas:TileAtlas;
 }

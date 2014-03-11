@@ -15,13 +15,16 @@ import com.haxepunk.Mask;
 class Grid extends Hitbox
 {
 	/**
-	 * If x/y positions should be used instead of columns/rows.
+	 * If x/y positions should be used instead of columns/rows (the default). Columns/rows means
+	 * screen coordinates relative to the width/height specified in the constructor. X/y means
+	 * grid coordinates, relative to the grid size.
 	 */
 	public var usePositions:Bool;
 
 
 	/**
-	 * Constructor.
+	 * Constructor. The actual size of the grid is determined by dividing the width/height by
+	 * tileWidth/tileHeight, and stored in the properties columns/rows.
 	 * @param	width			Width of the grid, in pixels.
 	 * @param	height			Height of the grid, in pixels.
 	 * @param	tileWidth		Width of a grid tile, in pixels.
@@ -58,11 +61,18 @@ class Grid extends Hitbox
 		_check.set(Type.getClassName(Mask), collideMask);
 		_check.set(Type.getClassName(Hitbox), collideHitbox);
 		_check.set(Type.getClassName(Pixelmask), collidePixelmask);
+		_check.set(Type.getClassName(Grid), collideGrid);
 
 		data = new Array<Array<Bool>>();
 		for (x in 0...rows)
 		{
 			data.push(new Array<Bool>());
+#if neko // initialize to false instead of null
+			for (y in 0...columns)
+			{
+				data[x][y] = false;
+			}
+#end
 		}
 	}
 
@@ -74,14 +84,25 @@ class Grid extends Hitbox
 	 */
 	public function setTile(column:Int = 0, row:Int = 0, solid:Bool = true)
 	{
-		if ( ! checkTile(column, row) ) return;
-
 		if (usePositions)
 		{
 			column = Std.int(column / _tile.width);
 			row = Std.int(row / _tile.height);
 		}
-		data[row][column] = solid;
+		setTileXY(column, row, solid);
+	}
+
+	/**
+	 * Sets the value of the tile. Ignores the setting of usePositions, and assumes coordinates are
+	 * XY tile coordinates (the usePositions default).
+	 * @param	x			Tile column.
+	 * @param	y			Tile row.
+	 * @param	solid		If the tile should be solid.
+	 */
+	private function setTileXY(x:Int = 0, y:Int = 0, solid:Bool = true)
+	{
+		if (!checkTile(x, y)) return;
+		data[y][x] = solid;
 	}
 
 	/**
@@ -99,7 +120,6 @@ class Grid extends Hitbox
 		// check that tile is valid
 		if (column < 0 || column > columns - 1 || row < 0 || row > rows - 1)
 		{
-			//trace('Tile out of bounds: ' + column + ', ' + row);
 			return false;
 		}
 		else
@@ -116,14 +136,25 @@ class Grid extends Hitbox
 	 */
 	public function getTile(column:Int = 0, row:Int = 0):Bool
 	{
-		if ( ! checkTile(column, row) ) return false;
-
 		if (usePositions)
 		{
 			column = Std.int(column / _tile.width);
 			row = Std.int(row / _tile.height);
 		}
-		return data[row][column];
+		return getTileXY(column, row);
+	}
+
+	/**
+	 * Gets the value of a tile. Ignores the setting of usePositions, and assumes coordinates are
+	 * XY tile coordinates (the usePositions default).
+	 * @param	column		Tile column.
+	 * @param	row			Tile row.
+	 * @return	tile value.
+	*/
+	private function getTileXY(x:Int = 0, y:Int = 0):Bool
+	{
+		if (!checkTile(x, y)) return false;
+		return data[y][x];
 	}
 
 	/**
@@ -132,7 +163,7 @@ class Grid extends Hitbox
 	 * @param	row			First row.
 	 * @param	width		Columns to fill.
 	 * @param	height		Rows to fill.
-	 * @param	fill		Value to fill.
+	 * @param	solid		Value to fill.
 	 */
 	public function setRect(column:Int = 0, row:Int = 0, width:Int = 1, height:Int = 1, solid:Bool = true)
 	{
@@ -148,7 +179,7 @@ class Grid extends Hitbox
 		{
 			for (xx in column...(column + width))
 			{
-				setTile(xx, yy, solid);
+				setTileXY(xx, yy, solid);
 			}
 		}
 	}
@@ -167,9 +198,9 @@ class Grid extends Hitbox
 
 	/**
 	* Loads the grid data from a string.
-	* @param str			The string data, which is a set of tile values (0 or 1) separated by the columnSep and rowSep strings.
-	* @param columnSep		The string that separates each tile value on a row, default is ",".
-	* @param rowSep			The string that separates each row of tiles, default is "\n".
+	* @param	str			The string data, which is a set of tile values (0 or 1) separated by the columnSep and rowSep strings.
+	* @param	columnSep	The string that separates each tile value on a row, default is ",".
+	* @param	rowSep		The string that separates each row of tiles, default is "\n".
 	*/
 	public function loadFromString(str:String, columnSep:String = ",", rowSep:String = "\n")
 	{
@@ -190,11 +221,29 @@ class Grid extends Hitbox
 	}
 
 	/**
-	* Saves the grid data to a string.
-	* @param columnSep		The string that separates each tile value on a row, default is ",".
-	* @param rowSep			The string that separates each row of tiles, default is "\n".
+	* Loads the grid data from an array.
+	* @param	array	The array data, which is a set of tile values (0 or 1)
 	*/
-	public function saveToString(columnSep:String = ",", rowSep:String = "\n"): String
+	public function loadFrom2DArray(array:Array<Array<Int>>)
+	{
+		for (y in 0...array.length)
+		{
+			for (x in 0...array[0].length)
+			{
+				setTile(x, y, array[y][x] > 0);
+			}
+		}
+	}
+
+	/**
+	* Saves the grid data to a string.
+	* @param	columnSep	The string that separates each tile value on a row, default is ",".
+	* @param	rowSep		The string that separates each row of tiles, default is "\n".
+	*
+	* @return The string version of the grid.
+	*/
+	public function saveToString(columnSep:String = ",", rowSep:String = "\n",
+		solid:String = "true", empty:String = "false"): String
 	{
 		var s:String = '',
 			x:Int, y:Int;
@@ -202,7 +251,7 @@ class Grid extends Hitbox
 		{
 			for (x in 0...columns)
 			{
-				s += Std.string(getTile(x, y));
+				s += Std.string(getTileXY(x, y) ? solid : empty);
 				if (x != columns - 1) s += columnSep;
 			}
 			if (y != rows - 1) s += rowSep;
@@ -211,16 +260,34 @@ class Grid extends Hitbox
 	}
 
 	/**
+	 *  Make a copy of the grid.
+	 *
+	 * @return Return a copy of the grid.
+	 */
+	public function clone():Grid
+	{
+		var cloneGrid = new Grid(_width, _height, Std.int(_tile.width), Std.int(_tile.height), _x, _y);
+		for ( y in 0...rows)
+		{
+			for (x in 0...columns)
+			{
+				cloneGrid.setTile(x,y,getTile(x,y));
+			}
+		}
+		return cloneGrid;
+	}
+
+	/**
 	 * The tile width.
 	 */
-	public var tileWidth(getTileWidth, never):Int;
-	private inline function getTileWidth():Int { return Std.int(_tile.width); }
+	public var tileWidth(get, never):Int;
+	private inline function get_tileWidth():Int { return Std.int(_tile.width); }
 
 	/**
 	 * The tile height.
 	 */
-	public var tileHeight(getTileHeight, never):Int;
-	private inline function getTileHeight():Int { return Std.int(_tile.height); }
+	public var tileHeight(get, never):Int;
+	private inline function get_tileHeight():Int { return Std.int(_tile.height); }
 
 	/**
 	 * How many columns the grid has
@@ -329,51 +396,175 @@ class Grid extends Hitbox
 			_tile.y += _tile.height;
 		}
 #else
-		trace('Pixelmasks will not work in targets other than flash due to hittest not being implemented in NME.');
+		trace('Pixelmasks will not work in targets other than flash due to hittest not being implemented in OpenFL.');
 #end
+		return false;
+	}
+
+	/** @private Collides against a Grid. */
+	private function collideGrid(other:Grid):Bool
+	{
+		// Find the X edges
+		var ax1:Float = parent.x + _x;
+		var ax2:Float = ax1 + _width;
+		var bx1:Float = other.parent.x + other._x;
+		var bx2:Float = bx1 + other._width;
+		if (ax2 < bx1 || ax1 > bx2) return false;
+
+		// Find the Y edges
+		var ay1:Float = parent.y + _y;
+		var ay2:Float = ay1 + _height;
+		var by1:Float = other.parent.y + other._y;
+		var by2:Float = by1 + other._height;
+		if (ay2 < by1 || ay1 > by2) return false;
+
+		// Find the overlapping area
+		var ox1:Float = ax1 > bx1 ? ax1 : bx1;
+		var oy1:Float = ay1 > by1 ? ay1 : by1;
+		var ox2:Float = ax2 < bx2 ? ax2 : bx2;
+		var oy2:Float = ay2 < by2 ? ay2 : by2;
+
+		// Find the smallest tile size, and snap the top and left overlapping
+		// edges to that tile size. This ensures that corner checking works
+		// properly.
+		var tw:Float, th:Float;
+		if (_tile.width < other._tile.width)
+		{
+			tw = _tile.width;
+			ox1 -= parent.x + _x;
+			ox1 = Std.int(ox1 / tw) * tw;
+			ox1 += parent.x + _x;
+		}
+		else
+		{
+			tw = other._tile.width;
+			ox1 -= other.parent.x + other._x;
+			ox1 = Std.int(ox1 / tw) * tw;
+			ox1 += other.parent.x + other._x;
+		}
+		if (_tile.height < other._tile.height)
+		{
+			th = _tile.height;
+			oy1 -= parent.y + _y;
+			oy1 = Std.int(oy1 / th) * th;
+			oy1 += parent.y + _y;
+		}
+		else
+		{
+			th = other._tile.height;
+			oy1 -= other.parent.y + other._y;
+			oy1 = Std.int(oy1 / th) * th;
+			oy1 += other.parent.y + other._y;
+		}
+
+		// Step through the overlapping rectangle
+		var y:Float = oy1;
+		var x:Float = 0;
+		while (y < oy2)
+		{
+			// Get the row indices for the top and bottom edges of the tile
+			var ar1:Int = Std.int((y - parent.y - _y) / _tile.height);
+			var br1:Int = Std.int((y - other.parent.y - other._y) / other._tile.height);
+			var ar2:Int = Std.int(((y - parent.y - _y) + (th - 1)) / _tile.height);
+			var br2:Int = Std.int(((y - other.parent.y - other._y) + (th - 1)) / other._tile.height);
+
+			x = ox1;
+			while (x < ox2)
+			{
+				// Get the column indices for the left and right edges of the tile
+				var ac1:Int = Std.int((x - parent.x - _x) / _tile.width);
+				var bc1:Int = Std.int((x - other.parent.x - other._x) / other._tile.width);
+				var ac2:Int = Std.int(((x - parent.x - _x) + (tw - 1)) / _tile.width);
+				var bc2:Int = Std.int(((x - other.parent.x - other._x) + (tw - 1)) / other._tile.width);
+
+				// Check all the corners for collisions
+				if ((getTile(ac1, ar1) && other.getTile(bc1, br1))
+				 || (getTile(ac2, ar1) && other.getTile(bc2, br1))
+				 || (getTile(ac1, ar2) && other.getTile(bc1, br2))
+				 || (getTile(ac2, ar2) && other.getTile(bc2, br2)))
+				{
+					return true;
+				}
+				x += tw;
+			}
+			y += th;
+		}
+
 		return false;
 	}
 
 	override public function debugDraw(graphics:Graphics, scaleX:Float, scaleY:Float):Void
 	{
-		HXP.point.x = _x + parent.x - HXP.camera.x;
-		HXP.point.y = _y + parent.y - HXP.camera.y;
-		var color = HXP.convertColor(0xFF0000FF);
+		var cellX:Float, cellY:Float,
+			stepX = tileWidth * scaleX,
+			stepY = tileHeight * scaleY;
 
-		HXP.buffer.lock();
-		for (i in 1...columns)
-		{
-			HXP.rect.x = HXP.point.x + i * tileWidth;
-			HXP.rect.y = HXP.point.y;
-			HXP.rect.width = 1;
-			HXP.rect.height = _height;
-			HXP.buffer.fillRect(HXP.rect, color);
-		}
+		// determine drawing location
+		var px = _x + parent.x - HXP.camera.x;
+		var py = _y + parent.y - HXP.camera.y;
 
-		for (i in 1...rows)
-		{
-			HXP.rect.x = HXP.point.x;
-			HXP.rect.y = HXP.point.y + i * tileHeight;
-			HXP.rect.width = _width;
-			HXP.rect.height = 1;
-			HXP.buffer.fillRect(HXP.rect, color);
-		}
+		// determine start and end tiles to draw (optimization)
+		var startx = Math.floor( -px / tileWidth),
+			starty = Math.floor( -py / tileHeight),
+			destx = startx + 1 + Math.ceil(HXP.width / tileWidth),
+			desty = starty + 1 + Math.ceil(HXP.height / tileHeight);
 
-		HXP.rect.width = tileWidth;
-		HXP.rect.height = tileHeight;
-		for (y in 0...rows)
+		// nothing will render if we're completely off screen
+		if (startx > columns || starty > rows || destx < 0 || desty < 0)
+			return;
+
+		// clamp values to boundaries
+		if (startx < 0) startx = 0;
+		if (destx > columns) destx = columns;
+		if (starty < 0) starty = 0;
+		if (desty > rows) desty = rows;
+
+		px = (px + (startx * tileWidth)) * scaleX;
+		py = (py + (starty * tileHeight)) * scaleY;
+
+		var row:Array<Bool>;
+		cellY = py;
+		for (y in starty...desty)
 		{
-			HXP.rect.y = HXP.point.y + y * tileHeight;
-			for (x in 0...columns)
+			cellX = px;
+			row = data[y];
+			for (x in startx...destx)
 			{
-				HXP.rect.x = HXP.point.x + x * tileWidth;
-				if (data[y][x])
+				if (row[x])
 				{
-					HXP.buffer.fillRect(HXP.rect, color);
+					graphics.lineStyle(1, 0xFFFFFF, 0.3);
+					graphics.drawRect(cellX, cellY, stepX, stepY);
+
+					if (x < columns - 1 && !row[x + 1])
+					{
+						graphics.lineStyle(1, 0x0000FF);
+						graphics.moveTo(cellX + stepX, cellY);
+						graphics.lineTo(cellX + stepX, cellY + stepY);
+					}
+					if (x > 0 && !row[x - 1])
+					{
+						graphics.lineStyle(1, 0x0000FF);
+						graphics.moveTo(cellX, cellY);
+						graphics.lineTo(cellX, cellY + stepY);
+					}
+					if (y < rows - 1 && !data[y + 1][x])
+					{
+						graphics.lineStyle(1, 0x0000FF);
+						graphics.moveTo(cellX, cellY + stepY);
+						graphics.lineTo(cellX + stepX, cellY + stepY);
+					}
+					if (y > 0 && !data[y - 1][x])
+					{
+						graphics.lineStyle(1, 0x0000FF);
+						graphics.moveTo(cellX, cellY);
+						graphics.lineTo(cellX + stepX, cellY);
+					}
 				}
+				cellX += stepX;
 			}
+			cellY += stepY;
 		}
-		HXP.buffer.unlock();
+
 	}
 
 	public function squareProjection(axis:Point, point:Point):Void

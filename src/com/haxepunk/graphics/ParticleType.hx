@@ -1,33 +1,32 @@
 package com.haxepunk.graphics;
 
-import flash.display.BitmapData;
-import flash.geom.Rectangle;
 import com.haxepunk.HXP;
 import com.haxepunk.utils.Ease;
+
+import flash.display.BitmapData;
+import flash.geom.Rectangle;
 
 /**
  * Template used to define a particle type used by the Emitter class. Instead
  * of creating this object yourself, fetch one with Emitter's add() function.
  */
+@:allow(com.haxepunk.graphics.Emitter)
 class ParticleType
 {
 	/**
 	 * Constructor.
 	 * @param	name			Name of the particle type.
 	 * @param	frames			Array of frame indices to animate through.
-	 * @param	source			Source image.
+	 * @param	width			Unused parameter.
 	 * @param	frameWidth		Frame width.
 	 * @param	frameHeight		Frame height.
-	 * @param	frameCount		Frame count.
 	 */
-	public function new(name:String, frames:Array<Int>, source:BitmapData, frameWidth:Int, frameHeight:Int)
+	public function new(name:String, frames:Array<Int>, width:Int, frameWidth:Int, frameHeight:Int)
 	{
 		_red = _green = _blue = _alpha = 1;
 		_redRange = _greenRange = _blueRange = _alphaRange = 0;
 
 		_name = name;
-		_source = source;
-		_width = source.width;
 		_frame = new Rectangle(0, 0, frameWidth, frameHeight);
 		if (frames == null) frames = new Array<Int>();
 		_frames = frames;
@@ -36,10 +35,6 @@ class ParticleType
         _gravity  = _gravityRange  = 0;
         _duration = _durationRange = 0;
         _distance = _distanceRange = 0;
-        _alpha    = _alphaRange    = 0;
-
-        _red = _green = _blue = 1;
-        _redRange = _greenRange = _blueRange = 0;
 	}
 
 	/**
@@ -50,10 +45,11 @@ class ParticleType
 	 * @param	angleRange		Random amount to add to the particle's direction.
 	 * @param	distanceRange	Random amount to add to the particle's distance.
 	 * @param	durationRange	Random amount to add to the particle's duration.
-	 * @param	ease			Optional easer function.
+	 * @param	ease			Optional ease function.
+	 * @param	backwards		If the motion should be played backwards.
 	 * @return	This ParticleType object.
 	 */
-	public function setMotion(angle:Float, distance:Float, duration:Float, angleRange:Float = 0, distanceRange:Float = 0, durationRange:Float = 0, ease:EaseFunction = null):ParticleType
+	public function setMotion(angle:Float, distance:Float, duration:Float, angleRange:Float = 0, distanceRange:Float = 0, durationRange:Float = 0, ease:EaseFunction = null, backwards:Bool = false):ParticleType
 	{
 		_angle = angle * HXP.RAD;
 		_distance = distance;
@@ -62,6 +58,7 @@ class ParticleType
 		_distanceRange = distanceRange;
 		_durationRange = durationRange;
 		_ease = ease;
+		_backwards = backwards;
 		return this;
 	}
 
@@ -86,9 +83,9 @@ class ParticleType
 
 	/**
 	* Sets the gravity range of this particle type.
-	* @param gravity Gravity amount to affect to the particle y velocity.
-	* @param gravityRange Random amount to add to the particle's gravity.
-	* @return This ParticleType object.
+	* @param	gravity			Gravity amount to affect to the particle y velocity.
+	* @param	gravityRange	Random amount to add to the particle's gravity.
+	* @return	This ParticleType object.
 	*/
 	public function setGravity(gravity:Float = 0, gravityRange:Float = 0):ParticleType
 	{
@@ -146,40 +143,39 @@ class ParticleType
 	}
 
 	// Particle information.
-	public var _name:String;
-	public var _source:BitmapData;
-	public var _width:Int;
-	public var _frame:Rectangle;
-	public var _frames:Array<Int>;
+	private var _name:String;
+	private var _frame:Rectangle;
+	private var _frames:Array<Int>;
 
 	// Motion information.
-	public var _angle:Float;
-	public var _angleRange:Float;
-	public var _distance:Float;
-	public var _distanceRange:Float;
-	public var _duration:Float;
-	public var _durationRange:Float;
-	public var _ease:EaseFunction;
+	private var _angle:Float;
+	private var _angleRange:Float;
+	private var _distance:Float;
+	private var _distanceRange:Float;
+	private var _duration:Float;
+	private var _durationRange:Float;
+	private var _ease:EaseFunction;
+	private var _backwards:Bool;
 
 	// Gravity information.
-	public var _gravity:Float;
-	public var _gravityRange:Float;
+	private var _gravity:Float;
+	private var _gravityRange:Float;
 
 	// Alpha information.
-	public var _alpha:Float;
-	public var _alphaRange:Float;
-	public var _alphaEase:EaseFunction;
+	private var _alpha:Float;
+	private var _alphaRange:Float;
+	private var _alphaEase:EaseFunction;
 
 	// Color information.
-	public var _red:Float;
-	public var _redRange:Float;
-	public var _green:Float;
-	public var _greenRange:Float;
-	public var _blue:Float;
-	public var _blueRange:Float;
-	public var _colorEase:EaseFunction;
+	private var _red:Float;
+	private var _redRange:Float;
+	private var _green:Float;
+	private var _greenRange:Float;
+	private var _blue:Float;
+	private var _blueRange:Float;
+	private var _colorEase:EaseFunction;
 
 	// Buffer information.
-	public var _buffer:BitmapData;
-	public var _bufferRect:Rectangle;
+	private var _buffer:BitmapData;
+	private var _bufferRect:Rectangle;
 }

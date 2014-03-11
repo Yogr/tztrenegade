@@ -1,7 +1,9 @@
 package com.haxepunk.graphics;
 
+import com.haxepunk.Entity;
 import com.haxepunk.HXP;
 import com.haxepunk.Graphic;
+import com.haxepunk.graphics.atlas.Atlas;
 import flash.display.BitmapData;
 import flash.geom.Point;
 
@@ -17,13 +19,12 @@ class Graphiclist extends Graphic
 	 */
 	public function new(graphic:Array<Dynamic> = null)
 	{
-		super();
-
-
 		_graphics = new Array<Graphic>();
 		_temp = new Array<Graphic>();
 		_camera = new Point();
 		_count = 0;
+
+		super();
 
 		if (graphic != null)
 		{
@@ -40,8 +41,7 @@ class Graphiclist extends Graphic
 		}
 	}
 
-	/** @private Renders the Graphics in the list. */
-	override public function render(target:BitmapData, point:Point, camera:Point)
+	private inline function renderList(renderFunc:Graphic->Void, point:Point, camera:Point)
 	{
 		point.x += x;
 		point.y += y;
@@ -60,8 +60,35 @@ class Graphiclist extends Graphic
 				else _point.x = _point.y = 0;
 				_camera.x = camera.x;
 				_camera.y = camera.y;
-				g.render(target, _point, _camera);
+				renderFunc(g);
 			}
+		}
+	}
+
+	/** @private Renders the Graphics in the list. */
+	override public function render(target:BitmapData, point:Point, camera:Point)
+	{
+		renderList(function(g:Graphic) {
+			g.render(target, _point, _camera);
+		}, point, camera);
+	}
+
+	/** @private Renders the Graphics in the list. */
+	override public function renderAtlas(layer:Int, point:Point, camera:Point)
+	{
+		renderList(function(g:Graphic) {
+			g.renderAtlas(layer, _point, _camera);
+		}, point, camera);
+	}
+
+	/**
+	 * Destroys the list of graphics
+	 */
+	override public function destroy()
+	{
+		for (g in _graphics)
+		{
+			g.destroy();
 		}
 	}
 
@@ -72,6 +99,12 @@ class Graphiclist extends Graphic
 	 */
 	public function add(graphic:Graphic):Graphic
 	{
+		if (graphic == null) return graphic;
+
+		// set blit mode on first add
+		if (_count == 0) blit = graphic.blit;
+		else if (blit != graphic.blit) throw "Can't add graphic objects with different render methods.";
+
 		_graphics[_count ++] = graphic;
 		if (!active) active = graphic.active;
 		return graphic;
@@ -84,7 +117,7 @@ class Graphiclist extends Graphic
 	 */
 	public function remove(graphic:Graphic):Graphic
 	{
-		if (Lambda.indexOf(_graphics, graphic) < 0) return graphic;
+		if (HXP.indexOf(_graphics, graphic) < 0) return graphic;
 		HXP.clear(_temp);
 
 		for (g in _graphics)
@@ -125,14 +158,14 @@ class Graphiclist extends Graphic
 	/**
 	 * All Graphics in this list.
 	 */
-	public var children(getChildren, null):Array<Graphic>;
-	private function getChildren():Array<Graphic> { return _graphics; }
+	public var children(get, null):Array<Graphic>;
+	private function get_children():Array<Graphic> { return _graphics; }
 
 	/**
 	 * Amount of Graphics in this list.
 	 */
-	public var count(getCount, null):Int;
-	private function getCount():Int { return _count; }
+	public var count(get, null):Int;
+	private function get_count():Int { return _count; }
 
 	/**
 	 * Check if the Graphiclist should update.

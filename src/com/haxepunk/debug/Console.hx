@@ -5,6 +5,7 @@ import com.haxepunk.HXP;
 import com.haxepunk.utils.Input;
 import com.haxepunk.utils.Key;
 
+import openfl.Assets;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
 import flash.display.BlendMode;
@@ -20,16 +21,13 @@ import flash.text.TextFormatAlign;
 
 import haxe.Log;
 import haxe.PosInfos;
+import haxe.ds.IntMap;
 
-// Define classes for FlashDevelop
-#if (flash && swfmill)
-	class GfxConsoleDebug  extends BitmapData { }
-	class GfxConsoleLogo   extends BitmapData { }
-	class GfxConsoleOutput extends BitmapData { }
-	class GfxConsolePause  extends BitmapData { }
-	class GfxConsolePlay   extends BitmapData { }
-	class GfxConsoleStep   extends BitmapData { }
-#end
+enum TraceCapture
+{
+	No;
+	Yes;
+}
 
 class Console
 {
@@ -48,21 +46,17 @@ class Console
 	// Initialize variables
 	private function init()
 	{
-		toggleKey = 192; // Tilde (~) by default
-
+		// Console display objects.
 		_sprite = new Sprite();
-#if nme
-		var font = nme.Assets.getFont("font/04B_03__.ttf");
+		var font = Assets.getFont("font/04B_03__.ttf");
 		if (font == null)
 		{
-			font = nme.Assets.getFont(HXP.defaultFont);
+			font = Assets.getFont(HXP.defaultFont);
 		}
 		_format = new TextFormat(font.fontName, 8, 0xFFFFFF);
-#elseif flash
-		_format = new TextFormat("console");
-#end
 		_back = new Bitmap();
 
+		// FPS panel information.
 		_fpsRead = new Sprite();
 		_fpsReadText = new TextField();
 		_fpsInfo = new Sprite();
@@ -70,34 +64,42 @@ class Console
 		_fpsInfoText1 = new TextField();
 		_memReadText = new TextField();
 
+		_layerList = new LayerList();
+
+		// Output panel information.
 		_logRead = new Sprite();
 		_logReadText0 = new TextField();
 		_logReadText1 = new TextField();
 		_logScroll = 0;
 		_logLines = 33;
 
+		// Entity count panel information.
 		_entRead = new Sprite();
 		_entReadText = new TextField();
 
+		// Debug panel information.
 		_debRead = new Sprite();
 		_debReadText0 = new TextField();
 		_debReadText1 = new TextField();
 
+		// Button panel information.
 		_butRead = new Sprite();
 
+		// Entity selection information.
 		_entScreen = new Sprite();
 		_entSelect = new Sprite();
 		_entRect = new Rectangle();
 
+		// Log information.
 		LOG = new Array<String>();
 
+		LAYER_LIST  = new IntMap<Int>();
 		ENTITY_LIST = new Array<Entity>();
-		SCREEN_LIST = new List<Entity>();
-		SELECT_LIST = new List<Entity>();
+		SCREEN_LIST = new Array<Entity>();
+		SELECT_LIST = new Array<Entity>();
 
-		WATCH_LIST = new List<String>();
-		WATCH_LIST.push("x");
-		WATCH_LIST.push("y");
+		// Watch information.
+		WATCH_LIST = ["x", "y"];
 	}
 
 	private function traceLog(v:Dynamic, ?infos:PosInfos)
@@ -116,24 +118,27 @@ class Console
 	 */
 	public function log(data:Array<Dynamic>)
 	{
-		var s:String;
-		if (data.length > 1)
+		var s:String = "";
+
+		// Iterate through data to build a string.
+		for (i in 0...data.length)
 		{
-			s = "";
-			var i:Int = 0;
-			while (i < data.length)
-			{
-				if (i > 0) s += " ";
-				s += Std.string(data[i++]);
-			}
+			if (i > 0) s += " ";
+			s += (data[i] != null ? Std.string(data[i]) : "null");
 		}
-		else s = data[0].toString();
+
+		// Replace newlines with multiple log statements.
 		if (s.indexOf("\n") >= 0)
 		{
 			var a:Array<String> = s.split("\n");
 			for (s in a) LOG.push(s);
 		}
-		else LOG.push(s);
+		else
+		{
+			LOG.push(s);
+		}
+
+		// If the log is running, update it.
 		if (_enabled && _sprite.visible) updateLog();
 	}
 
@@ -155,50 +160,64 @@ class Console
 	}
 
 	/**
-	 * Enables the console.
+	 * Show the console.
 	 */
-	public function enable()
+	public function show()
 	{
+		if (!_visible)
+		{
+			HXP.stage.addChild(_sprite);
+			_visible = true;
+		}
+	}
+
+	/**
+	 * Hide the console.
+	 */
+	public function hide()
+	{
+		if (_visible)
+		{
+			HXP.stage.removeChild(_sprite);
+			_visible = false;
+		}
+	}
+
+	/**
+	 * Enables the console.
+	 *
+	 * @param	trace_capture	Option to capture trace in HaxePunk.
+	 * @param	toggleKey		Key used to toggle the console, tilde (~) by default.
+	 */
+	public function enable(?trace_capture:TraceCapture, toggleKey=Key.TILDE)
+	{
+		this.toggleKey = toggleKey;
+
 		// Quit if the console is already enabled.
 		if (_enabled) return;
 
 		// load assets based on embedding method
-#if nme
 		try
 		{
-			_bmpLogo = new Bitmap(nme.Assets.getBitmapData("gfx/debug/console_logo.png"));
-			_butDebug = new Bitmap(nme.Assets.getBitmapData("gfx/debug/console_debug.png"));
-			_butOutput = new Bitmap(nme.Assets.getBitmapData("gfx/debug/console_output.png"));
-			_butPlay = new Bitmap(nme.Assets.getBitmapData("gfx/debug/console_play.png"));
-			_butPause = new Bitmap(nme.Assets.getBitmapData("gfx/debug/console_pause.png"));
-			_butStep = new Bitmap(nme.Assets.getBitmapData("gfx/debug/console_step.png"));
+			_bmpLogo = new Bitmap(Assets.getBitmapData("gfx/debug/console_logo.png"));
+			_butDebug = new Bitmap(Assets.getBitmapData("gfx/debug/console_debug.png"));
+			_butOutput = new Bitmap(Assets.getBitmapData("gfx/debug/console_output.png"));
+			_butPlay = new Bitmap(Assets.getBitmapData("gfx/debug/console_play.png"));
+			_butPause = new Bitmap(Assets.getBitmapData("gfx/debug/console_pause.png"));
+			_butStep = new Bitmap(Assets.getBitmapData("gfx/debug/console_step.png"));
 		} catch (e:Dynamic) {
 			return;
 		}
-#elseif swfmill // Flashdevelop
-		_bmpLogo = new Bitmap(new GfxConsoleLogo(0, 0));
-		_butDebug = new Bitmap(new GfxConsoleDebug(0, 0));
-		_butOutput = new Bitmap(new GfxConsoleOutput(0, 0));
-		_butPlay = new Bitmap(new GfxConsolePlay(0, 0));
-		_butPause = new Bitmap(new GfxConsolePause(0, 0));
-		_butStep = new Bitmap(new GfxConsoleStep(0, 0));
-#else // samhaxe
-		_bmpLogo = new GfxConsoleLogo();
-		_butDebug = new GfxConsoleDebug();
-		_butOutput = new GfxConsoleOutput();
-		_butPlay = new GfxConsolePlay();
-		_butPause = new GfxConsolePause();
-		_butStep = new GfxConsoleStep();
-#end
 
 		// Enable it and add the Sprite to the stage.
 		_enabled = true;
-		HXP.engine.addChild(_sprite);
+		_visible = true;
+		HXP.stage.addChild(_sprite);
 
 		// Used to determine some text sizing.
-		var big:Bool = width >= 480;
+		var big:Bool = width >= BIG_WIDTH_THRESHOLD;
 
-		// The transparent FlashPunk logo overlay bitmap.
+		// The transparent HaxePunk logo overlay bitmap.
 		_sprite.addChild(_back);
 
 		// The entity and selection sprites.
@@ -209,11 +228,12 @@ class Console
 		_sprite.addChild(_entRead);
 		_entRead.addChild(_entReadText);
 		_entReadText.defaultTextFormat = format(16, 0xFFFFFF, "right");
-		#if flash
+#if flash
 		_entReadText.embedFonts = true;
-		#end
+#end
 		_entReadText.width = 100;
 		_entReadText.height = 20;
+		_entRead.x = width - _entReadText.width;
 
 		// The entity count panel.
 		_entRead.graphics.clear();
@@ -221,7 +241,7 @@ class Console
 #if flash
 		_entRead.graphics.drawRoundRectComplex(0, 0, _entReadText.width, 20, 0, 0, 20, 0);
 #else
-		_entRead.graphics.drawRoundRect(0, -20, _entReadText.width + 40, 40, 20, 20);
+		_entRead.graphics.drawRoundRect(0, -20, _entReadText.width + 20, 40, 40, 40);
 #end
 
 		// The FPS text.
@@ -240,10 +260,12 @@ class Console
 		_fpsRead.graphics.clear();
 		_fpsRead.graphics.beginFill(0, .75);
 #if flash
-		_fpsRead.graphics.drawRoundRectComplex(0, 0, big ? 200 : 100, 20, 0, 0, 0, 20);
+		_fpsRead.graphics.drawRoundRectComplex(0, 0, big ? 320 : 160, 20, 0, 0, 0, 20);
 #else
-		_fpsRead.graphics.drawRoundRect(-20, -20, (big ? 220 : 120), 40, 20, 20);
+		_fpsRead.graphics.drawRoundRect(-20, -20, big ? 320 + 20 : 160 + 20, 40, 40, 40);
 #end
+
+		_sprite.addChild(_layerList);
 
 		// The frame timing text.
 		if (big) _sprite.addChild(_fpsInfo);
@@ -259,14 +281,18 @@ class Console
 		_fpsInfoText0.height = _fpsInfoText1.height = 20;
 		_fpsInfo.x = 75;
 		_fpsInfoText1.x = 60;
+		_fpsInfo.width = _fpsInfoText0.width + _fpsInfoText1.width;
 
+		// The memory usage
+#if !js
 		_fpsRead.addChild(_memReadText);
 		_memReadText.defaultTextFormat = format(16);
 		_memReadText.embedFonts = true;
 		_memReadText.width = 110;
 		_memReadText.height = 20;
-		_memReadText.x = _fpsInfo.x + _fpsInfo.width + 5;
+		_memReadText.x = (big) ? _fpsInfo.x + _fpsInfoText0.width + _fpsInfoText1.width + 5 : _fpsInfo.x + 9;
 		_memReadText.y = 1;
+#end
 
 		// The output log text.
 		_sprite.addChild(_logRead);
@@ -289,7 +315,8 @@ class Console
 		_logBar = new Rectangle(8, 24, 16, _logHeight - 8);
 		_logBarGlobal = _logBar.clone();
 		_logBarGlobal.y += 40;
-		_logLines = Std.int(_logHeight / (big ? 16.5 : 8.5));
+		if (big) _logLines = Std.int(_logHeight / 16.5);
+		else _logLines = Std.int(_logHeight / 8.5);
 
 		// The debug text.
 		_sprite.addChild(_debRead);
@@ -326,19 +353,22 @@ class Console
 		_butRead.graphics.clear();
 		_butRead.graphics.beginFill(0, .75);
 #if flash
-		_butRead.graphics.drawRoundRectComplex( -20, 0, 100, 20, 0, 0, 20, 20);
+		_butRead.graphics.drawRoundRectComplex(-20, 0, 100, 20, 0, 0, 20, 20);
 #else
-		_butRead.graphics.drawRoundRect(-20, -20, 100, 40, 20, 20);
+		_butRead.graphics.drawRoundRect(-20, -20, 100, 40, 40, 40);
 #end
 		debug = true;
 
 		// redraws the logo
 		HXP.stage.addEventListener(Event.RESIZE, onResize);
+		onResize(null);
 
 		// Set the state to unpaused.
 		paused = false;
 
-		Log.trace = traceLog;
+		if (trace_capture != TraceCapture.No)
+			Log.trace = traceLog;
+
 		LOG.push("-- HaxePunk v" + HXP.VERSION + " --");
 		if (_enabled && _sprite.visible) updateLog();
 	}
@@ -354,13 +384,8 @@ class Console
 		HXP.matrix.tx = Math.max((_back.bitmapData.width - _bmpLogo.width) / 2, 0);
 		HXP.matrix.ty = Math.max((_back.bitmapData.height - _bmpLogo.height) / 2, 0);
 		HXP.matrix.scale(Math.min(width / _back.bitmapData.width, 1), Math.min(height / _back.bitmapData.height, 1));
-#if (flash || js)
 		_back.bitmapData.draw(_bmpLogo, HXP.matrix, null, BlendMode.MULTIPLY);
 		_back.bitmapData.draw(_back.bitmapData, null, null, BlendMode.INVERT);
-#else
-		_back.bitmapData.draw(_bmpLogo, HXP.matrix, null, "multiply");
-		_back.bitmapData.draw(_back.bitmapData, null, null, "invert");
-#end
 		_back.bitmapData.colorTransform(_back.bitmapData.rect, new ColorTransform(1, 1, 1, 0.5));
 		updateLog();
 	}
@@ -368,9 +393,9 @@ class Console
 	/**
 	 * If the console should be visible.
 	 */
-	public var visible(getVisible, setVisible):Bool;
-	private function getVisible():Bool { return _sprite.visible; }
-	private function setVisible(value:Bool):Bool
+	public var visible(get, set):Bool;
+	private function get_visible():Bool { return _sprite.visible; }
+	private function set_visible(value:Bool):Bool
 	{
 		_sprite.visible = value;
 		if (_enabled && value) updateLog();
@@ -378,24 +403,45 @@ class Console
 	}
 
 	/**
+	 * Allows masks to be turned on and off in the console
+	 */
+	public var debugDraw(default, set):Bool = true;
+	public function set_debugDraw(value:Bool):Bool
+	{
+		debugDraw = value;
+		updateEntityLists(false);
+		renderEntities();
+		return value;
+	}
+
+	/**
 	 * Console update, called by game loop.
 	 */
 	public function update()
 	{
-		// Quit if the console isn't enabled.
-		if (!_enabled) return;
+		// Quit if the console isn't enabled or visible.
+		if (!_enabled || !_visible)
+			return;
 
+		// move on resize
 		_entRead.x = width - _entReadText.width;
+		_layerList.x = width - _layerList.width - 20;
+		_layerList.y = (height - _layerList.height) / 2;
+		_layerList.visible = HXP.engine.paused && _debug;
+
+		// Update buttons.
+		if (_butRead.visible)
+			updateButtons();
 
 		// If the console is paused.
 		if (_paused)
 		{
-			// Update buttons.
-			updateButtons();
 
 			// While in debug mode.
 			if (_debug)
 			{
+				updateEntityLists(HXP.scene.count != ENTITY_LIST.length);
+
 				// While the game is paused.
 				if (HXP.engine.paused)
 				{
@@ -443,7 +489,6 @@ class Console
 				else
 				{
 					// Update info while the game runs.
-					updateEntityLists(HXP.world.count != ENTITY_LIST.length);
 					renderEntities();
 					updateFPSRead();
 					updateEntityCount();
@@ -473,9 +518,9 @@ class Console
 	/**
 	 * If the Console is currently in paused mode.
 	 */
-	public var paused(getPaused, setPaused):Bool;
-	private function getPaused():Bool { return _paused; }
-	private function setPaused(value:Bool):Bool
+	public var paused(get, set):Bool;
+	private function get_paused():Bool { return _paused; }
+	private function set_paused(value:Bool):Bool
 	{
 		// Quit if the console isn't enabled.
 		if (!_enabled) return false;
@@ -487,7 +532,9 @@ class Console
 		// Panel visibility.
 		_back.visible = value;
 		_entScreen.visible = value;
+#if !mobile // buttons always show on mobile devices
 		_butRead.visible = value;
+#end
 
 		// If the console is paused.
 		if (value)
@@ -503,8 +550,8 @@ class Console
 			_logRead.visible = true;
 			updateLog();
 			HXP.clear(ENTITY_LIST);
-			SCREEN_LIST.clear();
-			SELECT_LIST.clear();
+			HXP.clear(SCREEN_LIST);
+			HXP.clear(SELECT_LIST);
 		}
 		return _paused;
 	}
@@ -512,9 +559,9 @@ class Console
 	/**
 	 * If the Console is currently in debug mode.
 	 */
-	public var debug(getDebug, setDebug):Bool;
-	private function getDebug():Bool { return _debug; }
-	private function setDebug(value:Bool):Bool
+	public var debug(get, set):Bool;
+	private function get_debug():Bool { return _debug; }
+	private function set_debug(value:Bool):Bool
 	{
 		// Quit if the console isn't enabled.
 		if (!_enabled) return false;
@@ -647,32 +694,30 @@ class Console
 		else if (rect.height == 0) rect.height = 1;
 
 		HXP.rect.width = HXP.rect.height = 6;
-		var sx:Float = HXP.screen.scaleX * HXP.screen.scale,
-			sy:Float = HXP.screen.scaleY * HXP.screen.scale,
+		var sx:Float = HXP.screen.fullScaleX,
+			sy:Float = HXP.screen.fullScaleY,
 			e:Entity;
 
-		if (Input.check(Key.CONTROL))
-		{
-			// Append selected Entitites with new selections.
-			for (e in SCREEN_LIST)
-			{
-				if (Lambda.indexOf(SELECT_LIST, e) < 0)
-				{
-					HXP.rect.x = (e.x - HXP.camera.x) * sx - 3;
-					HXP.rect.y = (e.y - HXP.camera.y) * sy - 3;
-					if (rect.intersects(HXP.rect)) SELECT_LIST.push(e);
-				}
-			}
-		}
-		else
+		if (!Input.check(Key.CONTROL))
 		{
 			// Replace selections with new selections.
-			SELECT_LIST.clear();
-			for (e in SCREEN_LIST)
+			HXP.clear(SELECT_LIST);
+		}
+		// Append/Remove selected Entitites.
+		for (e in SCREEN_LIST)
+		{
+			HXP.rect.x = (e.x - HXP.camera.x) * sx - 3;
+			HXP.rect.y = (e.y - HXP.camera.y) * sy - 3;
+			if (rect.intersects(HXP.rect))
 			{
-				HXP.rect.x = (e.x - HXP.camera.x) * sx - 3;
-				HXP.rect.y = (e.y - HXP.camera.y) * sy - 3;
-				if (rect.intersects(HXP.rect)) SELECT_LIST.push(e);
+				if (HXP.indexOf(SELECT_LIST, e) < 0)
+				{
+					SELECT_LIST.push(e);
+				}
+				else
+				{
+					SELECT_LIST.remove(e);
+				}
 			}
 		}
 	}
@@ -680,9 +725,15 @@ class Console
 	/** @private Selects all entities on screen. */
 	private function selectAll()
 	{
-		var e:Entity;
-		SELECT_LIST.clear();
-		for (e in SCREEN_LIST) SELECT_LIST.push(e);
+		// capture number selected before clearing selection list
+		var numSelected = SELECT_LIST.length;
+		HXP.clear(SELECT_LIST);
+
+		// if the number of entities on screen is the same as selected, leave the list cleared
+		if (numSelected != SCREEN_LIST.length)
+		{
+			for (e in SCREEN_LIST) SELECT_LIST.push(e);
+		}
 		renderEntities();
 	}
 
@@ -723,15 +774,29 @@ class Console
 		if (fetchList)
 		{
 			HXP.clear(ENTITY_LIST);
-			HXP.world.getAll(ENTITY_LIST);
+			HXP.scene.getAll(ENTITY_LIST);
+
+			for (key in LAYER_LIST.keys())
+			{
+				LAYER_LIST.set(key, 0);
+			}
 		}
 
 		// Update the list of Entities on screen.
-		SCREEN_LIST.clear();
+		HXP.clear(SCREEN_LIST);
 		for (e in ENTITY_LIST)
 		{
-			if (e.collideRect(e.x, e.y, HXP.camera.x, HXP.camera.y, HXP.width, HXP.height))
+			var layer = e.layer;
+			if (e.onCamera && HXP.scene.layerVisible(layer))
 				SCREEN_LIST.push(e);
+
+			if (fetchList)
+				LAYER_LIST.set(layer, LAYER_LIST.exists(layer) ? LAYER_LIST.get(layer) + 1 : 1);
+		}
+
+		if (fetchList)
+		{
+			_layerList.set(LAYER_LIST);
 		}
 	}
 
@@ -744,47 +809,42 @@ class Console
 		if (_debug)
 		{
 			var g:Graphics = _entScreen.graphics,
-				sx:Float = HXP.screen.scaleX * HXP.screen.scale,
-				sy:Float = HXP.screen.scaleY * HXP.screen.scale;
+				sx:Float = HXP.screen.fullScaleX,
+				sy:Float = HXP.screen.fullScaleY,
+				colorHitbox = 0xFFFFFF,
+				colorPosition = 0xFFFFFF;
 			g.clear();
 			for (e in SCREEN_LIST)
 			{
-//				if (e.mask != null) HXP.log(e.mask);
-				// If the Entity is not selected.
-				if (Lambda.indexOf(SELECT_LIST, e) < 0)
-				{
-					// Draw the normal hitbox and position.
-					if (e.width != 0 && e.height != 0)
-					{
-						g.lineStyle(1, 0xFF0000);
-						g.drawRect((e.x - e.originX - HXP.camera.x) * sx, (e.y - e.originY - HXP.camera.y) * sy, e.width * sx, e.height * sy);
+				var graphicScrollX = e.graphic != null ? e.graphic.scrollX : 1;
+				var graphicScrollY = e.graphic != null ? e.graphic.scrollY : 1;
 
-						if (e.mask != null)
-						{
-							g.lineStyle(1, 0x0000FF);
-							e.mask.debugDraw(g, sx, sy);
-						}
-					}
-					g.lineStyle(1, 0x00FF00);
-					g.drawRect((e.x - HXP.camera.x) * sx - 3, (e.y - HXP.camera.y) * sy - 3, 6, 6);
+				// If the Entity is not selected.
+				if (HXP.indexOf(SELECT_LIST, e) < 0)
+				{
+					colorHitbox = 0xFF0000;
+					colorPosition = 0x00FF00;
 				}
 				else
 				{
-					// Draw the selected hitbox and position.
-					if (e.width != 0 && e.height != 0)
-					{
-						g.lineStyle(1, 0xFFFFFF);
-						g.drawRect((e.x - e.originX - HXP.camera.x) * sx, (e.y - e.originY - HXP.camera.y) * sy, e.width * sx, e.height * sy);
-
-						if (e.mask != null)
-						{
-							g.lineStyle(1, 0x0000FF);
-							e.mask.debugDraw(g, sx, sy);
-						}
-					}
-					g.lineStyle(1, 0xFFFFFF);
-					g.drawRect((e.x - HXP.camera.x) * sx - 3, (e.y - HXP.camera.y) * sy - 3, 6, 6);
+					colorHitbox = 0xFFFFFF;
+					colorPosition = 0xFFFFFF;
 				}
+
+				// Draw the hitbox and position.
+				if (e.width != 0 && e.height != 0)
+				{
+					g.lineStyle(1, colorHitbox);
+					g.drawRect((e.x - e.originX - HXP.camera.x * graphicScrollX) * sx, (e.y - e.originY - HXP.camera.y * graphicScrollY) * sy, e.width * sx, e.height * sy);
+
+					if (debugDraw && e.mask != null)
+					{
+						g.lineStyle(1, 0x0000FF);
+						e.mask.debugDraw(g, sx, sy);
+					}
+				}
+				g.lineStyle(1, colorPosition);
+				g.drawCircle((e.x - HXP.camera.x * graphicScrollX) * sx, (e.y - HXP.camera.y * graphicScrollY) * sy, 3);
 			}
 		}
 	}
@@ -805,7 +865,11 @@ class Console
 #if flash
 			_logRead.graphics.drawRoundRectComplex(0, 0, _logReadText0.width, 20, 0, 20, 0, 0);
 #else
-			_logRead.graphics.drawRoundRect(0, 0, _logReadText0.width, 20, 20, 20);
+			_logRead.graphics.drawRect(0, 0, _logReadText0.width - 20, 20);
+			_logRead.graphics.moveTo(_logReadText0.width, 20);
+			_logRead.graphics.lineTo(_logReadText0.width - 20, 20);
+			_logRead.graphics.lineTo(_logReadText0.width - 20, 0);
+			_logRead.graphics.curveTo(_logReadText0.width, 0, _logReadText0.width, 20);
 #end
 			_logRead.graphics.drawRect(0, 20, width, _logHeight);
 
@@ -814,7 +878,7 @@ class Console
 #if flash
 			_logRead.graphics.drawRoundRectComplex(_logBar.x, _logBar.y, _logBar.width, _logBar.height, 8, 8, 8, 8);
 #else
-			_logRead.graphics.drawRoundRect(_logBar.x, _logBar.y, _logBar.width, _logBar.height, 8, 8);
+			_logRead.graphics.drawRoundRect(_logBar.x, _logBar.y, _logBar.width, _logBar.height, 16, 16);
 #end
 
 			// If the log has more lines than the display limit.
@@ -826,7 +890,7 @@ class Console
 #if flash
 				_logRead.graphics.drawRoundRectComplex(_logBar.x + 2, y, 12, 12, 6, 6, 6, 6);
 #else
-				_logRead.graphics.drawRoundRect(_logBar.x + 2, y, 12, 12, 6, 6);
+				_logRead.graphics.drawRoundRect(_logBar.x + 2, y, 12, 12, 12, 12);
 #end
 			}
 
@@ -864,7 +928,11 @@ class Console
 #if flash
 			_logRead.graphics.drawRoundRectComplex(0, 0, _logReadText0.width, 20, 0, 20, 0, 0);
 #else
-			_logRead.graphics.drawRoundRect(0, 0, _logReadText0.width, 20, 20, 20);
+			_logRead.graphics.drawRect(0, 0, _logReadText0.width - 20, 20);
+			_logRead.graphics.moveTo(_logReadText0.width, 20);
+			_logRead.graphics.lineTo(_logReadText0.width - 20, 20);
+			_logRead.graphics.lineTo(_logReadText0.width - 20, 0);
+			_logRead.graphics.curveTo(_logReadText0.width, 0, _logReadText0.width, 20);
 #end
 			_logRead.graphics.drawRect(0, 20, width, 20);
 
@@ -893,10 +961,10 @@ class Console
 			"Update: " + Std.string(HXP._updateTime) + "ms\n" +
 			"Render: " + Std.string(HXP._renderTime) + "ms";
 		_fpsInfoText1.text =
-			"Game: " + Std.string(HXP._gameTime) + "ms\n" +
-			"Flash: " + Std.string(HXP._flashTime) + "ms";
+			"System: " + Std.string(HXP._systemTime) + "ms\n" +
+			"Game: " + Std.string(HXP._gameTime) + "ms";
 		_memReadText.text =
-			"Mem: " + HXP.round(System.totalMemory / 1024 / 1024, 2) + "MB";
+			(width >= BIG_WIDTH_THRESHOLD ? "Mem: " : "") + HXP.round(System.totalMemory / 1024 / 1024, 2) + "MB";
 	}
 
 	/** @private Update the debug panel text. */
@@ -904,11 +972,11 @@ class Console
 	{
 		var str:String;
 		// Find out the screen size and set the text.
-		var big:Bool = width >= 480;
+		var big:Bool = width >= BIG_WIDTH_THRESHOLD;
 
 		// Update the Debug read text.
 		var s:String =
-			"Mouse: " + Std.string(HXP.world.mouseX) + ", " + Std.string(HXP.world.mouseY) +
+			"Mouse: " + Std.string(HXP.scene.mouseX) + ", " + Std.string(HXP.scene.mouseY) +
 			"\nCamera: " + Std.string(HXP.camera.x) + ", " + Std.string(HXP.camera.y);
 		if (SELECT_LIST.length != 0)
 		{
@@ -918,7 +986,7 @@ class Console
 			}
 			else
 			{
-				var e:Entity = SELECT_LIST.first();
+				var e:Entity = SELECT_LIST[0];
 				s += "\n\n- " + Type.getClassName(Type.getClass(e)) + " -\n";
 				for (str in WATCH_LIST)
 				{
@@ -929,7 +997,7 @@ class Console
 #end
 					if (field != null)
 					{
-						s += "\n" + str + ": " + field.toString();
+						s += "\n" + str + ": " + Std.string(field);
 					}
 				}
 			}
@@ -949,26 +1017,31 @@ class Console
 		_debRead.graphics.drawRoundRectComplex(0, 0, _debReadText0.width, 20, 0, 20, 0, 0);
 		_debRead.graphics.drawRoundRectComplex(0, 20, _debReadText1.width + 20, height - _debRead.y - 20, 0, 20, 0, 0);
 #else
-		_debRead.graphics.drawRoundRect(0, 0, _debReadText0.width, 20, 20, 20);
-		_debRead.graphics.drawRoundRect(0, 20, _debReadText1.width + 20, height - _debRead.y - 20, 20, 20);
+		_debRead.graphics.drawRect(0, 0, _debReadText0.width - 20, 20);
+		_debRead.graphics.moveTo(_debReadText0.width, 20);
+		_debRead.graphics.lineTo(_debReadText0.width - 20, 20);
+		_debRead.graphics.lineTo(_debReadText0.width - 20, 0);
+		_debRead.graphics.curveTo(_debReadText0.width, 0, _debReadText0.width, 20);
+		_debRead.graphics.drawRoundRect(-20, 20, _debReadText1.width + 40, height - _debRead.y, 40, 40);
 #end
 	}
 
 	/** @private Updates the Entity count text. */
 	private function updateEntityCount()
 	{
-		_entReadText.text = Std.string(HXP.world.count) + " Entities";
+		_entReadText.text = Std.string(HXP.scene.count) + " Entities";
 	}
 
 	/** @private Updates the Button panel. */
 	private function updateButtons()
 	{
 		// Button visibility.
-		_butRead.x = _fpsInfo.x + _fpsInfo.width + Std.int((_entRead.x - (_fpsInfo.x + _fpsInfo.width)) / 2) - 30;
-		_butDebug.visible = !_debug;
-		_butOutput.visible = _debug;
+		_butRead.x = (width >= BIG_WIDTH_THRESHOLD ? _fpsInfo.x + _fpsInfoText0.width + _fpsInfoText1.width + Std.int((_entRead.x - (_fpsInfo.x + _fpsInfoText0.width + _fpsInfoText1.width)) / 2) - 30 : 160 + 20);
+		_butDebug.visible = _paused && !_debug;
+		_butOutput.visible = _paused && _debug;
 		_butPlay.visible = HXP.engine.paused;
 		_butPause.visible = !HXP.engine.paused;
+		_butStep.visible = _paused;
 
 		// Debug/Output button.
 		if (_butDebug.bitmapData.rect.contains(_butDebug.mouseX, _butDebug.mouseY))
@@ -976,7 +1049,7 @@ class Console
 			_butDebug.alpha = _butOutput.alpha = 1;
 			if (Input.mousePressed) debug = !_debug;
 		}
-		else _butDebug.alpha = _butOutput.alpha = .5;
+		else _butDebug.alpha = _butOutput.alpha = 0.5;
 
 		// Play/Pause button.
 		if (_butPlay.bitmapData.rect.contains(_butPlay.mouseX, _butPlay.mouseY))
@@ -988,7 +1061,7 @@ class Console
 				renderEntities();
 			}
 		}
-		else _butPlay.alpha = _butPause.alpha = .5;
+		else _butPlay.alpha = _butPause.alpha = 0.5;
 
 		// Frame step button.
 		if (_butStep.bitmapData.rect.contains(_butStep.mouseX, _butStep.mouseY))
@@ -1021,14 +1094,15 @@ class Console
 	/**
 	 * Get the unscaled screen size for the Console.
 	 */
-	public var width(getWidth, null):Int;
-	private function getWidth():Int { return HXP.windowWidth; }
+	public var width(get, never):Int;
+	private function get_width():Int { return HXP.windowWidth; }
 
-	public var height(getHeight, null):Int;
-	private function getHeight():Int { return HXP.windowHeight; }
+	public var height(get, never):Int;
+	private function get_height():Int { return HXP.windowHeight; }
 
 	// Console state information.
 	private var _enabled:Bool;
+	private var _visible:Bool;
 	private var _paused:Bool;
 	private var _debug:Bool;
 	private var _scrolling:Bool;
@@ -1048,6 +1122,9 @@ class Console
 	private var _fpsInfoText0:TextField;
 	private var _fpsInfoText1:TextField;
 	private var _memReadText:TextField;
+
+	// Layer panel information
+	private var _layerList:LayerList;
 
 	// Output panel information.
 	private var _logRead:Sprite;
@@ -1087,10 +1164,15 @@ class Console
 	private var LOG:Array<String>;
 
 	// Entity lists.
+	private var LAYER_LIST:IntMap<Int>;
 	private var ENTITY_LIST:Array<Entity>;
-	private var SCREEN_LIST:List<Entity>;
-	private var SELECT_LIST:List<Entity>;
+	private var SCREEN_LIST:Array<Entity>;
+	private var SELECT_LIST:Array<Entity>;
 
 	// Watch information.
-	private var WATCH_LIST:List<String>;
+	private var WATCH_LIST:Array<String>;
+
+	// Switch to small text in debug if console width > this threshold.
+	private static inline var BIG_WIDTH_THRESHOLD:Int = 420;
+
 }

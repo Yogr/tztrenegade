@@ -3,6 +3,7 @@ package com.haxepunk.masks;
 import com.haxepunk.Graphic;
 import com.haxepunk.Mask;
 import com.haxepunk.masks.Grid;
+import com.haxepunk.masks.SlopedGrid;
 import com.haxepunk.math.Projection;
 import com.haxepunk.math.Vector;
 import flash.display.Graphics;
@@ -31,6 +32,7 @@ class Circle extends Hitbox
 		_check.set(Type.getClassName(Circle), collideCircle);
 		_check.set(Type.getClassName(Hitbox), collideHitbox);
 		_check.set(Type.getClassName(Grid), collideGrid);
+		_check.set(Type.getClassName(SlopedGrid), collideSlopedGrid);
 	}
 
 	/** @private Collides against an Entity. */
@@ -80,8 +82,8 @@ class Circle extends Hitbox
 		if (maxx > other.columns) maxx = other.columns;
 		if (maxy > other.rows)    maxy = other.rows;
 
-		var midx:Int = Math.floor((maxx + minx) / 2),
-			midy:Int = Math.floor((maxy + miny) / 2),
+		var hTileWidth = other.tileWidth * 0.5,
+			hTileHeight = other.tileHeight * 0.5,
 			dx:Float, dy:Float;
 
 		for (xx in minx...maxx)
@@ -90,41 +92,98 @@ class Circle extends Hitbox
 			{
 				if (other.getTile(xx, yy))
 				{
-					if (xx <= midx)
-					{
-						if (yy <= midy) //Lower right
-						{
-							dx = entityDistX - (xx + 1) * other.tileWidth;
-							dy = entityDistX - (yy + 1) * other.tileHeight;
-							if (dx * dx + dy * dy < _squaredRadius)
-								return true;
-						}
-						else //Upper right
-						{
-							dx = entityDistX - (xx + 1) * other.tileWidth;
-							dy = entityDistX - yy * other.tileHeight;
-							if (dx * dx + dy * dy < _squaredRadius)
-								return true;
-						}
-					}
-					else
-					{
-						if (yy <= midy) //Lower left
-						{
-							dx = entityDistX - xx * other.tileWidth;
-							dy = entityDistX - (yy + 1) * other.tileHeight;
-							if (dx * dx + dy * dy < _squaredRadius)
-								return true;
-						}
-						else //Upper left
-						{
-							dx = entityDistX - xx * other.tileWidth;
-							dy = entityDistX - yy * other.tileHeight;
-							if (dx * dx + dy * dy < _squaredRadius)
-								return true;
-						}
-					}
-					return true;
+					var mx = otherX + xx*other.tileWidth + hTileWidth,
+						my = otherY + yy*other.tileHeight + hTileHeight;
+
+					var dx = Math.abs(thisX - mx);
+
+					if (dx > hTileWidth + radius)
+						continue;
+
+					var dy = Math.abs(thisY - my);
+
+					if (dy > hTileHeight + radius)
+						continue;
+
+					if (dx <= hTileWidth || dy <= hTileHeight)
+						return true;
+
+					var xCornerDist = dx - hTileWidth;
+					var yCornerDist = dy - hTileHeight;
+
+					if (xCornerDist * xCornerDist + yCornerDist * yCornerDist <= _squaredRadius)
+						return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private function collideSlopedGrid(other:SlopedGrid):Bool
+	{
+		var thisX:Float = parent.x + _x,
+			thisY:Float = parent.y + _y,
+			otherX:Float = other.parent.x + other.x,
+			otherY:Float = other.parent.y + other.y,
+			entityDistX:Float = thisX - otherX,
+			entityDistY:Float = thisY - otherY;
+
+		var minx:Int = Math.floor((entityDistX - radius) / other.tileWidth),
+			miny:Int = Math.floor((entityDistY - radius) / other.tileHeight),
+			maxx:Int = Math.ceil((entityDistX + radius) / other.tileWidth),
+			maxy:Int = Math.ceil((entityDistY + radius) / other.tileHeight);
+
+		if (minx < 0) minx = 0;
+		if (miny < 0) miny = 0;
+		if (maxx > other.columns) maxx = other.columns;
+		if (maxy > other.rows)    maxy = other.rows;
+
+		var hTileWidth = other.tileWidth * 0.5,
+			hTileHeight = other.tileHeight * 0.5,
+			dx:Float, dy:Float;
+
+		for (xx in minx...maxx)
+		{
+			for (yy in miny...maxy)
+			{
+				var tile = other.getTile(xx, yy);
+				if (tile == null || tile.type == null) continue;
+				if (tile.type == Solid)
+				{
+					var mx = otherX + xx*other.tileWidth + hTileWidth,
+						my = otherY + yy*other.tileHeight + hTileHeight;
+
+					var dx = Math.abs(thisX - mx);
+
+					if (dx > hTileWidth + radius)
+						continue;
+
+					var dy = Math.abs(thisY - my);
+
+					if (dy > hTileHeight + radius)
+						continue;
+
+					if (dx <= hTileWidth || dy <= hTileHeight)
+						return true;
+
+					var xCornerDist = dx - hTileWidth;
+					var yCornerDist = dy - hTileHeight;
+
+					if (xCornerDist * xCornerDist + yCornerDist * yCornerDist <= _squaredRadius)
+						return true;
+				}
+				else if (tile.type == AboveSlope || tile.type == BelowSlope)
+				{
+					var normal = -1 / tile.slope;
+					var dx = -(otherX + xx*other.tileWidth - thisX);
+					var dy = -(otherY + yy*other.tileHeight - thisY);
+					var b = -(normal * dx - dy);
+					var x = Math.abs((b - tile.yOffset) / (normal - tile.slope));
+					var y = x * normal + b;
+
+					var dist = HXP.distance(dx, dy, x, y);
+					if (dist <= radius) return true;
 				}
 			}
 		}
@@ -132,24 +191,29 @@ class Circle extends Hitbox
 	}
 
 	/** @private Collides against a Hitbox. */
-	private override function collideHitbox(other:Hitbox):Bool
+	override private function collideHitbox(other:Hitbox):Bool
 	{
-		var dx = Math.abs(parent.x + _x - other.parent.x + other.x),
-			dy = Math.abs(parent.y + _y - other.parent.y + other.y);
+		var _otherHalfWidth:Float = other._width * 0.5;
+		var _otherHalfHeight:Float = other._height * 0.5;
 
-		if (dx <= other.width || dy <= other.height)
+		var distanceX:Float = Math.abs(parent.x + _x - other.parent.x - other._x - _otherHalfWidth),
+			distanceY:Float = Math.abs(parent.y + _y - other.parent.y - other._y - _otherHalfHeight);
+
+		if (distanceX > _otherHalfWidth + radius || distanceY > _otherHalfHeight + radius)
+		{
+			return false;	// the hitbox is too far away so return false
+		}
+		if (distanceX <= _otherHalfWidth || distanceY <= _otherHalfHeight)
 		{
 			return true;
 		}
-		if (dx > other.width + radius || dy > other.height + radius)
-		{
-			return false; //The hitbox is to far away so return false
-		}
+		var distanceToCorner:Float = (distanceX - _otherHalfWidth) * (distanceX - _otherHalfWidth)
+			+ (distanceY - _otherHalfHeight) * (distanceY - _otherHalfHeight);
 
-		return (dx * dx + dy * dy) <= _squaredRadius;
+		return distanceToCorner <= _squaredRadius;
 	}
 
-	public override function project(axis:Vector, projection:Projection):Void
+	override public function project(axis:Vector, projection:Projection):Void
 	{
 		projection.min = -_radius;
 		projection.max = _radius;
@@ -160,15 +224,15 @@ class Circle extends Hitbox
 		graphics.drawCircle((parent.x + _x - HXP.camera.x) * scaleX, (parent.y + _y - HXP.camera.y) * scaleY, radius * scaleX);
 	}
 
-	private override function getX():Int { return _x - _radius; }
-	private override function getY():Int { return _y - _radius; }
+	override private function get_x():Int { return _x - _radius; }
+	override private function get_y():Int { return _y - _radius; }
 
 	/**
 	 * Radius.
 	 */
-	public var radius(getRadius, setRadius):Int;
-	private inline function getRadius():Int { return _radius; }
-	private function setRadius(value:Int):Int
+	public var radius(get, set):Int;
+	private inline function get_radius():Int { return _radius; }
+	private function set_radius(value:Int):Int
 	{
 		if (_radius == value) return value;
 		_radius = value;

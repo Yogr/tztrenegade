@@ -1,14 +1,18 @@
 package com.haxepunk.graphics;
 
+import com.haxepunk.Graphic;
+import com.haxepunk.graphics.atlas.Atlas;
+import com.haxepunk.graphics.atlas.AtlasRegion;
+import com.haxepunk.HXP;
+import com.haxepunk.RenderMode;
+import com.haxepunk.utils.Input;
+import com.haxepunk.utils.Key;
+import com.haxepunk.utils.Ease;
+
 import flash.display.BitmapData;
 import flash.geom.ColorTransform;
 import flash.geom.Point;
 import flash.geom.Rectangle;
-import com.haxepunk.HXP;
-import com.haxepunk.Graphic;
-import com.haxepunk.utils.Input;
-import com.haxepunk.utils.Key;
-import com.haxepunk.utils.Ease;
 
 /**
  * Particle emitter used for emitting and rendering particle sprites.
@@ -27,7 +31,7 @@ class Emitter extends Graphic
 		super();
 		_p = new Point();
 		_tint = new ColorTransform();
-		_types = new Hash<ParticleType>();
+		_types = new Map<String,ParticleType>();
 
 		setSource(source, frameWidth, frameHeight);
 		active = true;
@@ -42,20 +46,60 @@ class Emitter extends Graphic
 	 */
 	public function setSource(source:Dynamic, frameWidth:Int = 0, frameHeight:Int = 0)
 	{
-		if (Std.is(source, BitmapData))
-		{
-			_source = source;
-		}
+		var region:AtlasRegion = null;
+		if (Std.is(source, BitmapData)) setBitmapSource(source);
+		else if(Std.is(source, AtlasRegion)) region = setAtlasRegion(source);
 		else
 		{
-			_source = HXP.getBitmap(source);
+			if (HXP.renderMode == RenderMode.HARDWARE)
+			{
+				region = setAtlasRegion(Atlas.loadImageAsRegion(source));
+			}
+			else
+			{
+				setBitmapSource(HXP.getBitmap(source));
+			}
 		}
-		if (_source == null) throw "Invalid source image.";
-		_width = _source.width;
-		_height = _source.height;
+
+		if (_source == null && region == null)
+			throw "Invalid source image.";
+
 		_frameWidth = (frameWidth != 0) ? frameWidth : _width;
 		_frameHeight = (frameHeight != 0) ? frameHeight : _height;
 		_frameCount = Std.int(_width / _frameWidth) * Std.int(_height / _frameHeight);
+
+		if (region != null)
+		{
+			var rect = new Rectangle(0, 0, _frameWidth, _frameHeight);
+			var center = new Point(_frameWidth / 2, _frameHeight / 2);
+			_frames = new Array<AtlasRegion>();
+			for (i in 0..._frameCount)
+			{
+				_frames.push(region.clip(rect, center));
+				rect.x += _frameWidth;
+				if (rect.x >= _width)
+				{
+					rect.y += _frameHeight;
+					rect.x = 0;
+				}
+			}
+		}
+	}
+
+	private inline function setBitmapSource(bitmap:BitmapData)
+	{
+		blit = true;
+		_source = bitmap;
+		_width = Std.int(bitmap.width);
+		_height = Std.int(bitmap.height);
+	}
+
+	private inline function setAtlasRegion(region:AtlasRegion):AtlasRegion
+	{
+		blit = false;
+		_width = Std.int(region.width);
+		_height = Std.int(region.height);
+		return region;
 	}
 
 	override public function update()
@@ -64,19 +108,15 @@ class Emitter extends Graphic
 		if (_particle == null) return;
 
 		// particle info
-		var e:Float = HXP.fixed ? 1 : HXP.elapsed,
+		var e:Float = HXP.fixed ? 1 / HXP.assignedFrameRate : HXP.elapsed,
 			p:Particle = _particle,
-			n:Particle, t:Float;
+			n:Particle;
 
 		// loop through the particles
 		while (p != null)
 		{
-			// update time scale
-			p._time += e;
-			t = p._time / p._duration;
-
-			// remove on time-out
-			if (p._time >= p._duration)
+			p._time += e; // Update particle time elapsed
+			if (p._time >= p._duration) // remove on time-out
 			{
 				if (p._next != null) p._next._prev = p._prev;
 				if (p._prev != null) p._prev._next = p._next;
@@ -95,45 +135,65 @@ class Emitter extends Graphic
 		}
 	}
 
+	private inline function renderParticle(renderFunc:ParticleType->Float->Float->Void, point:Point, camera:Point)
+	{
+		// quit if there are no particles
+		if (_particle == null)
+		{
+			return;
+		}
+		else
+		{
+			// get rendering position
+			_point.x = point.x + x - camera.x * scrollX;
+			_point.y = point.y + y - camera.y * scrollY;
+
+			// particle info
+			var t:Float, td:Float,
+				p:Particle = _particle,
+				type:ParticleType;
+
+			// loop through the particles
+			while (p != null)
+			{
+				// get time scale
+				t = p._time / p._duration;
+
+				// get particle type
+				type = p._type;
+
+				// get position
+				td = (type._ease == null) ? t : type._ease(t);
+				_p.x = _point.x + p._x + p._moveX * (type._backwards ? 1 - td : td);
+				_p.y = _point.y + p._y + p._moveY * (type._backwards ? 1 - td : td);
+				p._moveY += p._gravity * td;
+
+				renderFunc(type, t, td);
+
+				// get next particle
+				p = p._next;
+			}
+		}
+	}
+
 	/** @private Renders the particles. */
 	override public function render(target:BitmapData, point:Point, camera:Point)
 	{
-		// quit if there are no particles
-		if (_particle == null) return;
-
-		// get rendering position
-		_point.x = point.x + x - camera.x * scrollX;
-		_point.y = point.y + y - camera.y * scrollY;
-
-		// particle info
-		var t:Float, td:Float,
-			p:Particle = _particle,
-			type:ParticleType,
-			rect:Rectangle;
-
-		// loop through the particles
-		while (p != null)
-		{
-			// get time scale
-			t = p._time / p._duration;
-
-			// get particle type
-			type = p._type;
+		var rect:Rectangle;
+		renderParticle(function(type:ParticleType, t:Float, td:Float) {
 			rect = type._frame;
-
-			// get position
-			td = (type._ease == null) ? t : type._ease(t);
-			_p.x = _point.x + p._x + p._moveX * td;
-			_p.y = _point.y + p._y + p._moveY * td;
-			p._moveY += p._gravity * td;
 
 			// get frame
 			if (type._frames.length == 0)
 				rect.x = 0;
 			else
 				rect.x = rect.width * type._frames[Std.int(td * type._frames.length)];
-			rect.y = Std.int(rect.x / type._width) * rect.height;
-			rect.x %= type._width;
+			rect.y = Std.int(rect.x / _width) * rect.height;
+			rect.x %= _width;
+
+			// particles should be emited from the emiter's center
+			_p.x -= rect.width / 2;
+			_p.y -= rect.height / 2;
 
 			// draw particle
 			if (type._buffer != null)
@@ -147,7 +207,7 @@ class Emitter extends Graphic
 				_tint.greenMultiplier = type._green + type._greenRange * td;
 				_tint.blueMultiplier  = type._blue + type._blueRange * td;
 				type._buffer.fillRect(type._bufferRect, HXP.blackColor);
-				type._buffer.copyPixels(type._source, rect, HXP.zero);
+				type._buffer.copyPixels(_source, rect, HXP.zero);
 				type._buffer.colorTransform(type._bufferRect, _tint);
 
 				// draw particle
@@ -155,12 +215,25 @@ class Emitter extends Graphic
 			}
 			else
 			{
-				target.copyPixels(type._source, rect, _p, null, null, true);
+				target.copyPixels(_source, rect, _p, null, null, true);
 			}
+		}, point, camera);
+	}
 
-			// get next particle
-			p = p._next;
-		}
+	override public function renderAtlas(layer:Int, point:Point, camera:Point)
+	{
+		var fsx:Float = HXP.screen.fullScaleX,
+			fsy:Float = HXP.screen.fullScaleY;
+
+		renderParticle(function(type:ParticleType, t:Float, td:Float) {
+			var frameIndex:Int = type._frames[Std.int(td * type._frames.length)];
+			_frames[frameIndex].draw(Math.floor(_p.x * fsx), Math.floor(_p.y * fsy), layer,
+				fsx, fsy, type._angle,
+				type._red + type._redRange * td,
+				type._green + type._greenRange * td,
+				type._blue + type._blueRange * td,
+				type._alpha + type._alphaRange * ((type._alphaEase == null) ? t : type._alphaEase(t)));
+		}, point, camera);
 	}
 
 	/**
@@ -172,9 +245,13 @@ class Emitter extends Graphic
 	public function newType(name:String, frames:Array<Int> = null):ParticleType
 	{
 		var pt:ParticleType = _types.get(name);
-		if (pt != null) throw "Cannot add multiple particle types of the same name";
-		pt = new ParticleType(name, frames, _source, _frameWidth, _frameHeight);
+
+		if (pt != null)
+			throw "Cannot add multiple particle types of the same name";
+
+		pt = new ParticleType(name, frames, _width, _frameWidth, _frameHeight);
 		_types.set(name, pt);
+
 		return pt;
 	}
 
@@ -187,22 +264,23 @@ class Emitter extends Graphic
 	 * @param	angleRange		Random amount to add to the particle's direction.
 	 * @param	distanceRange	Random amount to add to the particle's distance.
 	 * @param	durationRange	Random amount to add to the particle's duration.
-	 * @param	ease			Optional easer function.
+	 * @param	ease			Optional ease function.
+	 * @param	backwards		If the motion should be played backwards.
 	 * @return	This ParticleType object.
 	 */
-	public function setMotion(name:String, angle:Float, distance:Float, duration:Float, ?angleRange:Float = 0, ?distanceRange:Float = 0, ?durationRange:Float = 0, ?ease:EaseFunction = null):ParticleType
+	public function setMotion(name:String, angle:Float, distance:Float, duration:Float, ?angleRange:Float = 0, ?distanceRange:Float = 0, ?durationRange:Float = 0, ?ease:EaseFunction = null, ?backwards:Bool = false):ParticleType
 	{
 		var pt:ParticleType = _types.get(name);
 		if (pt == null) return null;
-		return pt.setMotion(angle, distance, duration, angleRange, distanceRange, durationRange, ease);
+		return pt.setMotion(angle, distance, duration, angleRange, distanceRange, durationRange, ease, backwards);
 	}
 
 	/**
 	 * Sets the gravity range for a particle type.
-	 * @param  name      The particle type.
-	 * @param  gravity      Gravity amount to affect to the particle y velocity.
-	 * @param  gravityRange  Random amount to add to the particle's gravity.
-	 * @return  This ParticleType object.
+	 * @param	name      		The particle type.
+	 * @param	gravity      	Gravity amount to affect to the particle y velocity.
+	 * @param	gravityRange	Random amount to add to the particle's gravity.
+	 * @return	This ParticleType object.
 	 */
 	public function setGravity(name:String, ?gravity:Float = 0, ?gravityRange:Float = 0):ParticleType
 	{
@@ -244,12 +322,14 @@ class Emitter extends Graphic
 	 * @param	name		Particle type to emit.
 	 * @param	x			X point to emit from.
 	 * @param	y			Y point to emit from.
-	 * @return
+	 * @return	The Particle emited.
 	 */
 	public function emit(name:String, ?x:Float = 0, ?y:Float = 0):Particle
 	{
 		var p:Particle, type:ParticleType = _types.get(name);
-		if (type == null) throw "Particle type \"" + name + "\" does not exist.";
+
+		if (type == null)
+			throw "Particle type \"" + name + "\" does not exist.";
 
 		if (_cache != null)
 		{
@@ -283,7 +363,9 @@ class Emitter extends Graphic
 	 * @param	name		Particle type to emit.
 	 * @param	x			X point to emit from.
 	 * @param	y			Y point to emit from.
-	 * @param	radius
+	 * @param	radius		Radius to emit inside.
+	 *
+	 * @return The Particle emited.
 	 */
 	public function emitInCircle(name:String, x:Float, y:Float, radius:Float):Particle
 	{
@@ -297,8 +379,10 @@ class Emitter extends Graphic
 	 * @param	name		Particle type to emit
 	 * @param	x			X point to emit from.
 	 * @param	y			Y point to emit from.
-	 * @param	width
-	 * @param	height
+	 * @param	width		Width of the area to emit from.
+	 * @param	height		height of the area to emit from.
+	 *
+	 * @return The Particle emited.
 	 */
 	public function emitInRectangle(name:String, x:Float, y:Float, width:Float ,height:Float):Particle
 	{
@@ -311,7 +395,7 @@ class Emitter extends Graphic
 	public var particleCount(default, null):Int;
 
 	// Particle information.
-	private var _types:Hash<ParticleType>;
+	private var _types:Map<String,ParticleType>;
 	private var _particle:Particle;
 	private var _cache:Particle;
 
@@ -322,9 +406,11 @@ class Emitter extends Graphic
 	private var _frameWidth:Int;
 	private var _frameHeight:Int;
 	private var _frameCount:Int;
+	private var _frames:Array<AtlasRegion>;
 
 	// Drawing information.
 	private var _p:Point;
 	private var _tint:ColorTransform;
-	private static inline var SIN:Float = Math.PI / 2;
+	private static var SIN(get,never):Float;
+	private static inline function get_SIN():Float { return Math.PI / 2; }
 }

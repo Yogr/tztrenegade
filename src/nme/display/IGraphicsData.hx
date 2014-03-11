@@ -1,15 +1,15 @@
 package nme.display;
-#if code_completion
+#if (cpp || neko)
 
-
-extern interface IGraphicsData {
+class IGraphicsData 
+{
+   /** @private */ public var nmeHandle:Dynamic;
+   public function new(inHandle:Dynamic) 
+   {
+      nmeHandle = inHandle;
+   }
 }
 
-
-#elseif (cpp || neko)
-typedef IGraphicsData = neash.display.IGraphicsData;
-#elseif js
-typedef IGraphicsData = jeash.display.IGraphicsData;
 #else
 typedef IGraphicsData = flash.display.IGraphicsData;
 #end

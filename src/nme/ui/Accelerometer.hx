@@ -1,14 +1,17 @@
 package nme.ui;
-#if code_completion
+#if (cpp || neko)
 
+import nme.Loader;
 
-extern class Accelerometer
+class Accelerometer 
 {
-	static function get():Acceleration;
+   public static function get():Acceleration 
+   {
+      // returns null if device not supported
+      return nme_input_get_acceleration();
+   }
+
+   private static var nme_input_get_acceleration = Loader.load("nme_input_get_acceleration", 0);
 }
 
-#elseif (cpp || neko)
-typedef Accelerometer = neash.ui.Accelerometer;
-#elseif js
-typedef Accelerometer = jeash.ui.Accelerometer;
 #end

@@ -19,6 +19,7 @@ class Masklist extends Hitbox
 		super();
 		_masks = new Array<Mask>();
 		_temp = new Array<Mask>();
+		_count = 0;
 
 		for (m in masks) add(m);
 	}
@@ -67,7 +68,7 @@ class Masklist extends Hitbox
 	 */
 	public function remove(mask:Mask):Mask
 	{
-		if (Lambda.indexOf(_masks, mask) < 0) return mask;
+		if (HXP.indexOf(_masks, mask) < 0) return mask;
 		HXP.clear(_temp);
 		for (m in _masks)
 		{
@@ -170,8 +171,8 @@ class Masklist extends Hitbox
 	/**
 	 * Amount of Masks in the list.
 	 */
-	public var count(getCount, null):Int;
-	private function getCount():Int { return _count; }
+	public var count(get, null):Int;
+	private function get_count():Int { return _count; }
 
 	// List information.
 	private var _masks:Array<Mask>;

@@ -1,16 +1,11 @@
 package nme.ui;
-#if code_completion
-
+#if (cpp || neko)
 
 typedef Acceleration = 
 {
-	x:Float,
-	y:Float,
-	z:Float 
+   x:Float,
+   y:Float,
+   z:Float 
 }
 
-#elseif (cpp || neko)
-typedef Acceleration = neash.ui.Acceleration;
-#elseif js
-typedef Acceleration = jeash.ui.Acceleration;
 #end

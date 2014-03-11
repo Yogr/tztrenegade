@@ -2,6 +2,7 @@ package com.haxepunk.graphics;
 
 import flash.display.BitmapData;
 import flash.display.Graphics;
+import flash.geom.Point;
 import com.haxepunk.HXP;
 import com.haxepunk.graphics.Spritemap;
 
@@ -17,7 +18,7 @@ class TiledSpritemap extends Spritemap
 	 * @param	frameHeight		Frame height.
 	 * @param	width			Width of the block to render.
 	 * @param	height			Height of the block to render.
-	 * @param	callback		Optional callback function for animation end.
+	 * @param	callbackFunc	Optional callback function for animation end.
 	 */
 	public function new(source:Dynamic, frameWidth:Int = 0, frameHeight:Int = 0, width:Int = 0, height:Int = 0, callbackFunc:CallbackFunction = null)
 	{
@@ -40,40 +41,76 @@ class TiledSpritemap extends Spritemap
 	/** @private Updates the buffer. */
 	override public function updateBuffer(clearBefore:Bool = false)
 	{
-		// get position of the current frame
-		_rect.x = _rect.width * _frame;
-		_rect.y = Std.int(_rect.x / _width) * _rect.height;
-		_rect.x %= _width;
-		if (flipped) _rect.x = (_width - _rect.width) - _rect.x;
-
-		// render it repeated to the buffer
-		var xx:Int = Std.int(_offsetX) % _imageWidth,
-			yy:Int = Std.int(_offsetY) % _imageHeight;
-		if (xx >= 0) xx -= _imageWidth;
-		if (yy >= 0) yy -= _imageHeight;
-		HXP.point.x = xx;
-		HXP.point.y = yy;
-		while (HXP.point.y < _imageHeight)
+		if (blit)
 		{
-			while (HXP.point.x < _imageWidth)
-			{
-				_buffer.copyPixels(_source, _sourceRect, HXP.point);
-				HXP.point.x += _sourceRect.width;
-			}
-			HXP.point.x = xx;
-			HXP.point.y += _sourceRect.height;
-		}
+			// get position of the current frame
+			_rect.x = _rect.width * _frame;
+			_rect.y = Std.int(_rect.x / _width) * _rect.height;
+			_rect.x %= _width;
+			if (flipped) _rect.x = (_width - _rect.width) - _rect.x;
 
-		// tint the buffer
-		if (_tint != null) _buffer.colorTransform(_bufferRect, _tint);
+			// render it repeated to the buffer
+			var xx:Int = Std.int(_offsetX) % _imageWidth,
+				yy:Int = Std.int(_offsetY) % _imageHeight;
+			if (xx >= 0) xx -= _imageWidth;
+			if (yy >= 0) yy -= _imageHeight;
+			HXP.point.x = xx;
+			HXP.point.y = yy;
+			while (HXP.point.y < _imageHeight)
+			{
+				while (HXP.point.x < _imageWidth)
+				{
+					_buffer.copyPixels(_source, _sourceRect, HXP.point);
+					HXP.point.x += _sourceRect.width;
+				}
+				HXP.point.x = xx;
+				HXP.point.y += _sourceRect.height;
+			}
+
+			// tint the buffer
+			if (_tint != null) _buffer.colorTransform(_bufferRect, _tint);
+		}
+		else
+		{
+			super.updateBuffer(clearBefore);
+		}
+	}
+
+	/** Renders the image. */
+	override public function renderAtlas(layer:Int, point:Point, camera:Point)
+	{
+		// determine drawing location
+		_point.x = point.x + x - originX - camera.x * scrollX;
+		_point.y = point.y + y - originY - camera.y * scrollY;
+
+		// TODO: properly handle flipped tiled spritemaps
+		if (_flipped) _point.x += _sourceRect.width;
+		var fsx = HXP.screen.fullScaleX,
+			fsy = HXP.screen.fullScaleY,
+			sx = fsx * scale * scaleX,
+			sy = fsy * scale * scaleY,
+			x = 0.0, y = 0.0;
+
+		while (y < _imageHeight)
+		{
+			while (x < _imageWidth)
+			{
+				_region.draw(Math.floor((_point.x + x) * fsx), Math.floor((_point.y + y) * fsy),
+					layer, sx * (_flipped ? -1 : 1), sy, angle,
+					_red, _green, _blue, _alpha);
+				x += _sourceRect.width;
+			}
+			x = 0;
+			y += _sourceRect.height;
+		}
 	}
 
 	/**
 	 * The x-offset of the texture.
 	 */
-	public var offsetX(getOffsetX, setOffsetY):Float;
-	private function getOffsetX():Float { return _offsetX; }
-	private function setOffsetX(value:Float):Float
+	public var offsetX(get, set):Float;
+	private function get_offsetX():Float { return _offsetX; }
+	private function set_offsetX(value:Float):Float
 	{
 		if (_offsetX == value) return value;
 		_offsetX = value;
@@ -84,9 +121,9 @@ class TiledSpritemap extends Spritemap
 	/**
 	 * The y-offset of the texture.
 	 */
-	public var offsetY(getOffsetY, setOffsetY):Float;
-	private function getOffsetY():Float { return _offsetY; }
-	private function setOffsetY(value:Float):Float
+	public var offsetY(get, set):Float;
+	private function get_offsetY():Float { return _offsetY; }
+	private function set_offsetY(value:Float):Float
 	{
 		if (_offsetY == value) return value;
 		_offsetY = value;

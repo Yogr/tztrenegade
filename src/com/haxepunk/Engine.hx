@@ -10,7 +10,9 @@ import flash.display.StageScaleMode;
 import flash.events.Event;
 import flash.geom.Rectangle;
 import flash.Lib;
+import haxe.EnumFlags;
 import haxe.Timer;
+import com.haxepunk.graphics.atlas.AtlasData;
 import com.haxepunk.utils.Draw;
 import com.haxepunk.utils.Input;
 import com.haxepunk.Tweener;
@@ -46,8 +48,9 @@ class Engine extends Sprite
 	 * @param	height			The height of your game.
 	 * @param	frameRate		The game framerate, in frames per second.
 	 * @param	fixed			If a fixed-framerate should be used.
+	 * @param   renderMode      Overrides the default render mode for this target
 	 */
-	public function new(width:Int, height:Int, frameRate:Float = 60, fixed:Bool = false)
+	public function new(width:Int = 0, height:Int = 0, frameRate:Float = 60, fixed:Bool = false, ?renderMode:RenderMode)
 	{
 		super();
 
@@ -58,16 +61,20 @@ class Engine extends Sprite
 
 		// global game objects
 		HXP.engine = this;
-		HXP.screen = new Screen();
 		HXP.width = width;
 		HXP.height = height;
 
+		if (renderMode != null)
+		{
+			HXP.renderMode = renderMode;
+		}
+		else
+		{
+			HXP.renderMode = #if (flash || js) RenderMode.BUFFER #else RenderMode.HARDWARE #end;
+		}
+
 		// miscellaneous startup stuff
-#if neko
-		if (HXP.randomSeed == null) HXP.randomizeSeed();
-#else
 		if (HXP.randomSeed == 0) HXP.randomizeSeed();
-#end
 
 		HXP.entity = new Entity();
 		HXP.time = Lib.getTimer();
@@ -77,7 +84,7 @@ class Engine extends Sprite
 		maxFrameSkip = 5;
 		tickRate = 4;
 		_frameList = new Array<Int>();
-		_flashTime = _delta = _frameListSum = 0;
+		_systemTime = _delta = _frameListSum = 0;
 		_frameLast = 0;
 
 		// on-stage event listener
@@ -106,36 +113,46 @@ class Engine extends Sprite
 	public function focusLost() { }
 
 	/**
-	 * Updates the game, updating the World and Entities.
+	 * Updates the game, updating the Scene and Entities.
 	 */
 	public function update()
 	{
+		HXP.scene.updateLists();
+		if (!HXP.gotoIsNull()) checkScene();
 		if (HXP.tweener.active && HXP.tweener.hasTween) HXP.tweener.updateTweens();
-
-		if (HXP.world.active)
+		if (HXP.scene.active)
 		{
-			if (HXP.world.hasTween) HXP.world.updateTweens();
-			HXP.world.update();
+			if (HXP.scene.hasTween) HXP.scene.updateTweens();
+			HXP.scene.update();
 		}
-		HXP.world.updateLists();
-		if (!HXP.gotoIsNull()) checkWorld();
+		HXP.scene.updateLists(false);
 	}
 
 	/**
-	 * Renders the game, rendering the World and Entities.
+	 * Renders the game, rendering the Scene and Entities.
 	 */
 	public function render()
 	{
+		if (HXP.screen.needsResize) HXP.resize(HXP.windowWidth, HXP.windowHeight);
+
 		// timing stuff
 		var t:Float = Lib.getTimer();
 		if (_frameLast == 0) _frameLast = Std.int(t);
 
 		// render loop
-		HXP.screen.swap();
+		if (HXP.renderMode == RenderMode.BUFFER)
+		{
+			HXP.screen.swap();
+			HXP.screen.refresh();
+		}
 		Draw.resetTarget();
-		HXP.screen.refresh();
-		if (HXP.world.visible) HXP.world.render();
-		HXP.screen.redraw();
+
+		if (HXP.scene.visible) HXP.scene.render();
+
+		if (HXP.renderMode == RenderMode.BUFFER)
+		{
+			HXP.screen.redraw();
+		}
 
 		// more timing stuff
 		t = Lib.getTimer();
@@ -148,13 +165,15 @@ class Engine extends Sprite
 	/**
 	 * Sets the game's stage properties. Override this to set them differently.
 	 */
-	public function setStageProperties()
+	private function setStageProperties()
 	{
 		HXP.stage.frameRate = HXP.assignedFrameRate;
 		HXP.stage.align = StageAlign.TOP_LEFT;
 		HXP.stage.quality = StageQuality.HIGH;
 		HXP.stage.scaleMode = StageScaleMode.NO_SCALE;
 		HXP.stage.displayState = StageDisplayState.NORMAL;
+		HXP.windowWidth = HXP.stage.stageWidth;
+		HXP.windowHeight = HXP.stage.stageHeight;
 
 		resize(); // call resize once to initialize the screen
 
@@ -166,20 +185,35 @@ class Engine extends Sprite
 		HXP.stage.addEventListener(Event.ACTIVATE, function (e:Event) {
 			HXP.focused = true;
 			focusGained();
-			HXP.world.focusGained();
+			HXP.scene.focusGained();
 		});
 
 		HXP.stage.addEventListener(Event.DEACTIVATE, function (e:Event) {
 			HXP.focused = false;
 			focusLost();
-			HXP.world.focusLost();
+			HXP.scene.focusLost();
 		});
+
+#if !(flash || html5)
+		flash.display.Stage.shouldRotateInterface = function(orientation:Int):Bool {
+			if (HXP.indexOf(HXP.orientations, orientation) == -1) return false;
+			var tmp = HXP.height;
+			HXP.height = HXP.width;
+			HXP.width = tmp;
+			resize();
+			return true;
+		}
+#end
 	}
 
 	/** @private Event handler for stage resize */
 	private function resize()
 	{
+		if (HXP.width == 0) HXP.width = HXP.stage.stageWidth;
+		if (HXP.height == 0) HXP.height = HXP.stage.stageHeight;
 		// calculate scale from width/height values
+		HXP.windowWidth = HXP.stage.stageWidth;
+		HXP.windowHeight = HXP.stage.stageHeight;
 		HXP.screen.scaleX = HXP.stage.stageWidth / HXP.width;
 		HXP.screen.scaleY = HXP.stage.stageHeight / HXP.height;
 		HXP.resize(HXP.stage.stageWidth, HXP.stage.stageHeight);
@@ -203,10 +237,11 @@ class Engine extends Sprite
 		// enable input
 		Input.enable();
 
-		// switch worlds
-		if (!HXP.gotoIsNull()) checkWorld();
+		// switch scenes
+		if (!HXP.gotoIsNull()) checkScene();
 
 		// game start
+		Draw.init();
 		init();
 
 		// start game loop
@@ -225,6 +260,25 @@ class Engine extends Sprite
 			_last = Lib.getTimer();
 			addEventListener(Event.ENTER_FRAME, onEnterFrame);
 		}
+
+		// Warnings when forcing RenderMode
+		if (HXP.renderMode == RenderMode.BUFFER)
+		{
+			#if (!(flash || js) && debug)
+			HXP.console.log(["Warning: Using RenderMode.BUFFER on native target may result in bad performance"]);
+			#end
+		}
+		else
+		{
+			#if ((flash || js) && debug)
+			HXP.console.log(["Warning: Using RenderMode.HARDWARE on flash/html5 target may result in corrupt graphics"]);
+			#end
+		}
+
+		// HTML 5 warning
+		#if (js && debug)
+		HXP.console.log(["Warning: the HTML 5 target is currently experimental"]);
+		#end
 	}
 
 	/** @private Framerate independent game loop. */
@@ -232,7 +286,7 @@ class Engine extends Sprite
 	{
 		// update timer
 		_time = _gameTime = Lib.getTimer();
-		HXP._flashTime = _time - _flashTime;
+		HXP._systemTime = _time - _systemTime;
 		_updateTime = _time;
 		HXP.elapsed = (_time - _last) / 1000;
 		if (HXP.elapsed > maxElapsed) HXP.elapsed = maxElapsed;
@@ -253,10 +307,11 @@ class Engine extends Sprite
 		HXP._updateTime = _time - _updateTime;
 
 		// render loop
-		if (!paused) render();
+		if (paused) _frameLast = _time; // continue updating frame timer
+		else render();
 
 		// update timer
-		_time = _flashTime = Lib.getTimer();
+		_time = _systemTime = Lib.getTimer();
 		HXP._renderTime = _time - _renderTime;
 		HXP._gameTime = _time - _gameTime;
 	}
@@ -274,7 +329,7 @@ class Engine extends Sprite
 
 		// update timer
 		_gameTime = Std.int(_time);
-		HXP._flashTime = _time - _flashTime;
+		HXP._systemTime = _time - _systemTime;
 
 		// update loop
 		if (_delta > _skip) _delta = _skip;
@@ -308,26 +363,28 @@ class Engine extends Sprite
 		if (!paused) render();
 
 		// update timer
-		_time = _flashTime = Lib.getTimer();
+		_time = _systemTime = Lib.getTimer();
 		HXP._renderTime = _time - _renderTime;
 		HXP._gameTime =  _time - _gameTime;
 	}
 
-	/** @private Switch Worlds if they've changed. */
-	private function checkWorld()
+	/** @private Switch scenes if they've changed. */
+	private function checkScene()
 	{
 		if (HXP.gotoIsNull()) return;
 
-		if (HXP.world != null)
+		if (HXP.scene != null)
 		{
-			HXP.world.end();
-			HXP.world.updateLists();
-			if (HXP.world.autoClear && HXP.world.hasTween) HXP.world.clearTweens();
-			HXP.swapWorld();
-			HXP.camera = HXP.world.camera;
-			HXP.world.updateLists();
-			HXP.world.begin();
-			HXP.world.updateLists();
+			HXP.scene.end();
+			HXP.scene.updateLists();
+			if (HXP.scene.autoClear && HXP.scene.hasTween) HXP.scene.clearTweens();
+			if (contains(HXP.scene.sprite)) removeChild(HXP.scene.sprite);
+			HXP.swapScene();
+			addChild(HXP.scene.sprite);
+			HXP.camera = HXP.scene.camera;
+			HXP.scene.updateLists();
+			HXP.scene.begin();
+			HXP.scene.updateLists();
 		}
 	}
 
@@ -344,7 +401,7 @@ class Engine extends Sprite
 	private var _updateTime:Float;
 	private var _renderTime:Float;
 	private var _gameTime:Float;
-	private var _flashTime:Float;
+	private var _systemTime:Float;
 
 	// FrameRate tracking.
 	private var _frameLast:Float;

@@ -15,10 +15,9 @@ class SfxFader extends Tween
 	 * @param	complete	Optional completion callback.
 	 * @param	type		Tween type.
 	 */
-	public function new(sfx:Sfx, ?complete:CompleteCallback, type:TweenType)
+	public function new(sfx:Sfx, ?complete:CompleteCallback, ?type:TweenType)
 	{
-		super(0, type, finish);
-		_complete = complete;
+		super(0, type, complete);
 		_sfx = sfx;
 	}
 
@@ -76,14 +75,14 @@ class SfxFader extends Tween
 			_sfx = _crossSfx;
 			_crossSfx = null;
 		}
-		if (_complete != null) _complete();
+		dispatchEvent(new TweenEvent(TweenEvent.FINISH));
 	}
 
 	/**
 	 * The current Sfx this object is effecting.
 	 */
-	public var sfx(getSfx, null):Sfx;
-	private function getSfx():Sfx { return _sfx; }
+	public var sfx(get, null):Sfx;
+	private function get_sfx():Sfx { return _sfx; }
 
 	// Fader information.
 	private var _sfx:Sfx;

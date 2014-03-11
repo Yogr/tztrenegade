@@ -18,24 +18,52 @@ class Tweener
 
 	}
 
+	/**
+	 * Add the tween to the tween list.
+	 *
+	 * @param	t		The tween to add.
+	 * @param	start	If the tween should start immediately.
+	 *
+	 * @return	The added tween.
+	 */
 	public function addTween(t:Tween, start:Bool = false):Tween
 	{
 		var ft:FriendTween = t;
-		if (ft._parent != null) throw "Cannot add a Tween object more than once.";
+
+		if (ft._parent != null)
+			throw "Cannot add a Tween object more than once.";
+
 		ft._parent = this;
 		ft._next = _tween;
 		var friendTween:FriendTween = _tween;
-		if (_tween != null) friendTween._prev = t;
+
+		if (_tween != null)
+			friendTween._prev = t;
+
 		_tween = t;
-		if (start) _tween.start();
+
+		if (start)
+			_tween.start();
+
 		return t;
 	}
 
+	/**
+	 * Remove the tween from the tween list.
+	 *
+	 * @param	t		The tween to remove.
+	 *
+	 * @return	The removed tween.
+	 */
 	public function removeTween(t:Tween):Tween
 	{
 		var ft:FriendTween = t;
-		if (ft._parent != this) throw "Core object does not contain Tween.";
-		if (ft._next != null) ft._next._prev = ft._prev;
+		if (ft._parent != this)
+			throw "Core object does not contain Tween.";
+
+		if (ft._next != null)
+			ft._next._prev = ft._prev;
+
 		if (ft._prev != null)
 		{
 			ft._prev._next = ft._next;
@@ -50,6 +78,9 @@ class Tweener
 		return t;
 	}
 
+	/**
+	 * Remove all tweens from the tween list.
+	 */
 	public function clearTweens()
 	{
 		var t:Tween,
@@ -63,6 +94,9 @@ class Tweener
 		}
 	}
 
+	/**
+	 * Update all contained tweens.
+	 */
 	public function updateTweens()
 	{
 		var t:Tween,
@@ -79,8 +113,8 @@ class Tweener
 		}
 	}
 
-	public var hasTween(getTween, never):Bool;
-	private function getTween():Bool { return (_tween != null); }
+	public var hasTween(get, never):Bool;
+	private function get_hasTween():Bool { return (_tween != null); }
 
 	private var _tween:Tween;
 }
