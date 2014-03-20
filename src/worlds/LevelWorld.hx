@@ -3,23 +3,30 @@ package worlds;
 import com.haxepunk.Entity;
 import com.haxepunk.Graphic;
 import com.haxepunk.graphics.Image;
+import com.haxepunk.Scene;
 import com.haxepunk.World;
 import com.haxepunk.HXP;
+import entities.Player;
 import nme.geom.Rectangle;
-//import com.haxepunk.tmx.TmxMap;
+import manager.InputManager;
+import com.haxepunk.tmx.TmxMap;
 
 /**
  * ...
  * @author Yogr
  * @date 3/7/2014
  */
-class LevelWorld extends World
+class LevelWorld extends Scene
 {
+    //-----------------------------------------------------------------------------------
+    /// Constructor
 	public function new() 
 	{
 		super();
 	}
 	
+    //-----------------------------------------------------------------------------------
+    /// initializer
 	override public function begin()
 	{
 		/* TODO : Create a way of tracking the level the user is on and loading in correct tile map for that level */
@@ -30,16 +37,15 @@ class LevelWorld extends World
 		platform.y = 380;
 		addGraphic(platform);
 		
-		
-		/* TODO : Create a custom hero class and load it here instead of just an image of the troll. */
-		var hero:Image = new Image("gfx/troll.png");
-		hero.x = 75;
-		hero.y = 292;
-		addGraphic(hero);
+		var hero:Player = new Player("gfx/troll.png", 75, 292);
+		add(hero);
 	}
 	
+    //-----------------------------------------------------------------------------------
+    /// Called every frame when it is the active scene
 	override public function update()
 	{
+        InputManager.GetInstance().update();
 		super.update();
 	}
 	

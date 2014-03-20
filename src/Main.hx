@@ -3,6 +3,7 @@ package ;
 import com.haxepunk.Engine;
 import com.haxepunk.HXP;
 import haxe.Log;
+import manager.InputManager;
 
 import worlds.StartScreen;
 
@@ -33,9 +34,10 @@ class Main extends Engine
 			HXP.console.enable();
 		}
 #end
+        var test:InputManager = InputManager.GetInstance();
 		HXP.screen.color = kClearColor;
 		HXP.screen.scale = 1;
-		HXP.world = new StartScreen();
+		HXP.scene = new StartScreen();
 	}
 
 	public static function main()

@@ -3,7 +3,7 @@ package worlds;
 import com.haxepunk.Entity;
 import com.haxepunk.graphics.Text;
 import com.haxepunk.graphics.Image;
-import com.haxepunk.World;
+import com.haxepunk.Scene;
 import com.haxepunk.HXP;
 import com.haxepunk.utils.Key;
 import com.haxepunk.utils.Input;
@@ -13,17 +13,19 @@ import com.haxepunk.utils.Input;
  * @author Yogr
  * @date 3/7/2014
  */
-class StartScreen extends World
+class StartScreen extends Scene
 {
-
+    //-----------------------------------------------------------------------------------
+    /// Constructor
 	public function new () 
 	{
 		super();		
 	}
 
+    //-----------------------------------------------------------------------------------
+    /// Initializer
 	public override function begin()
 	{
-		
 		Input.define("start", [Key.ANY]);
 
 		addGraphic( Image.createRect(HXP.width, HXP.height, 0x000000) );
@@ -54,10 +56,12 @@ class StartScreen extends World
 		
 	}
 
+    //-----------------------------------------------------------------------------------
+    /// updates every frame when set as active scene
 	public override function update()
 	{
 		if(Input.released("start")) 
-			HXP.world = new LevelWorld();
+			HXP.scene = new LevelWorld();
 		super.update();
 	}
 
